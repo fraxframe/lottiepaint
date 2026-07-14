@@ -1453,12 +1453,35 @@ input[type=checkbox],
   }
   function findItemForShapeInLayer(el, layerIndex, g) {
     if (!g) return null;
+    let elBBox = null;
+    try {
+      elBBox = el.getBBox();
+    } catch (err) {
+      elBBox = null;
+    }
+    let best = null;
+    let bestDist = Infinity;
     for (const cand of itemRowsList) {
       if (cand.layerIndex !== layerIndex) continue;
       const matched = findPathsForItem(g, cand.type, cand.ref, cand.idxPath, cand.layerIndex);
-      if (matched.indexOf(el) !== -1) return { item: cand, g, el };
+      if (matched.indexOf(el) === -1) continue;
+      // Multiple items can loosely match the same element (same color/dash).
+      // Disambiguate by picking whichever candidate's own declared geometry
+      // sits closest to the element that was actually clicked/hovered.
+      const target = targetBBoxForIdxPath(cand.idxPath, cand.layerIndex);
+      let dist = 0;
+      if (elBBox && target) {
+        const dx = elBBox.x + elBBox.width / 2 - (target.x + target.w / 2);
+        const dy = elBBox.y + elBBox.height / 2 - (target.y + target.h / 2);
+        const dSize = Math.abs(elBBox.width - target.w) + Math.abs(elBBox.height - target.h);
+        dist = Math.sqrt(dx * dx + dy * dy) + dSize;
+      }
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = cand;
+      }
     }
-    return null;
+    return best ? { item: best, g, el } : null;
   }
   function showHoverHighlight(item) {
     clearHoverClone();
