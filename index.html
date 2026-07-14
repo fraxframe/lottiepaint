@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Lottie Paint</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
+<style>
+  :root{
+    --bg:#1e1f22; --bg2:#2b2d30; --bg3:#333438; --line:#3d3e42;
+    --text:#d7d8db; --text-dim:#8a8c90; --accent:#4d9bf5; --accent2:#6ad3ff;
+    --panel-scale:1;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Arial,sans-serif;font-size:13px;overflow:hidden;}
+  #app{display:flex;flex-direction:column;height:100vh;}
+  #topbar{display:flex;align-items:center;gap:14px;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--line);flex-wrap:wrap;row-gap:6px;}
+  #topbar h1{font-size:14px;margin:0 8px 0 0;font-weight:600;color:var(--accent2);}
+  .btn{background:var(--bg3);border:1px solid var(--line);color:var(--text);padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px;}
+  .btn:hover{background:#3d3f44;border-color:var(--accent);}
+  #filters{display:flex;gap:10px;align-items:center;}
+  #filters label,#linearWrap label{display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--text-dim);font-size:12px;user-select:none;}
+  #filters input,#linearWrap input{accent-color:var(--accent);cursor:pointer;}
+  #linearWrap{display:flex;align-items:center;margin-left:8px;padding-left:12px;border-left:1px solid var(--line);}
+  #bgControls{display:flex;align-items:center;gap:8px;margin-left:auto;}
+  #bgControls span{color:var(--text-dim);font-size:12px;}
+  .bgOption{width:28px;height:28px;padding:0;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+  .bgOption.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+  #bgColorPicker{width:28px;height:28px;border:1px solid var(--line);border-radius:5px;background:none;padding:0;cursor:pointer;}
+  #bgColorPicker.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+  #editorResizer{width:5px;flex:none;cursor:col-resize;background:transparent;position:relative;}
+  #editorResizer:hover,#editorResizer.dragging{background:var(--accent);}
+  #main{flex:1;display:flex;min-height:0;}
+  #treePanel{width:280px;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;}
+  #treeHeader{padding:6px 10px;border-bottom:1px solid var(--line);color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;}
+  #tree{flex:1;overflow:auto;padding:4px 0;}
+  #editorPanel{width:290px;flex:none;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px;overflow:auto;}
+  #editorPanel h2{font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px;}
+  .empty-hint{color:var(--text-dim);font-size:12px;line-height:1.6;margin-top:20px;}
+  #centerPanel{flex:1;display:flex;flex-direction:column;min-width:0;background:#161719;}
+  #viewport{flex:1;display:flex;align-items:center;justify-content:center;position:relative;}
+  #viewport.checker{
+      background-image:
+      linear-gradient(45deg,#cfcfcf 25%,transparent 25%),
+      linear-gradient(-45deg,#cfcfcf 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#cfcfcf 75%),
+      linear-gradient(-45deg,transparent 75%,#cfcfcf 75%);
+      background-size:24px 24px;
+      background-position:0 0,0 12px,12px -12px,-12px 0px;
+      background-color:#ffffff;
+  }
+  #lottieContainer,#lottieContainerB{width:480px;height:480px;}
+  #dropHint{position:absolute;color:var(--text-dim);text-align:center;pointer-events:none;font-size:13px;line-height:1.6;}
+  #player{background:var(--bg2);border-top:1px solid var(--line);padding:8px 14px;display:flex;align-items:center;gap:10px;}
+  #playBtn{width:32px;height:32px;border-radius:50%;background:var(--bg3);border:1px solid var(--line);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;}
+  #playBtn:hover{border-color:var(--accent);}
+  #scrub{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--bg3);outline:none;cursor:pointer;}
+  #scrub::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--accent2);cursor:pointer;box-shadow:0 0 0 2px #16171980;}
+  #frameLabel{width:110px;text-align:right;color:var(--text-dim);font-variant-numeric:tabular-nums;font-size:11px;}
+
+  
+  .row,.btn,button,.swatch,.stopZone,.stop,.astop,#scrub,#playBtn,.gradbar,input[type=checkbox],.chainBtn{cursor:pointer;}
+  .stop.dragging,.astop.dragging{cursor:grabbing;}
+
+  
+  .node{}
+  .row{display:flex;align-items:center;gap:5px;padding:3px 6px 3px 4px;border-radius:3px;white-space:nowrap;}
+  .row:hover{background:#333438;}
+  .row.selected{background:#2b4a6e;}
+  .caret{width:12px;height:12px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:9px;transition:transform .1s;}
+  .caret.open{transform:rotate(90deg);}
+  .caret.hidden{visibility:hidden;}
+  .icon{width:14px;height:14px;flex:none;display:flex;align-items:center;justify-content:center;}
+  .icon svg{width:100%;height:100%;}
+  .nm{color:var(--text);overflow:hidden;text-overflow:ellipsis;}
+  .nm.leaf{color:var(--text-dim);}
+  .swatch{width:16px;height:16px;border-radius:3px;border:1px solid #00000066;flex:none;margin-left:auto;}
+  .catHeader{color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;padding:8px 8px 3px;}
+
+  
+  .gradbar-wrap{margin-bottom:14px;}
+  .gradToolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;}
+  .chainBtn{background:var(--bg3);border:1px solid var(--line);color:var(--text-dim);border-radius:4px;padding:4px 9px;font-size:13px;}
+  .deleteStopBtn{background:#4a2222;border:1px solid #8a3a3a;color:#ff8b8b;border-radius:4px;padding:4px 11px;font-size:14px;font-weight:600;}
+  .deleteStopBtn:hover{background:#632a2a;border-color:#ff6b6b;color:#ffb3b3;}
+  .chainBtn.active{border-color:var(--accent2);color:var(--accent2);background:#20384a;}
+  .gradbar{position:relative;height:calc(26px * var(--panel-scale));border-radius:4px;border:1px solid var(--line);margin:calc(20px * var(--panel-scale)) 8px calc(18px * var(--panel-scale)) 8px;user-select:none;
+    background-image:linear-gradient(45deg,#3a3b3f 25%,transparent 25%),linear-gradient(-45deg,#3a3b3f 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3a3b3f 75%),linear-gradient(-45deg,transparent 75%,#3a3b3f 75%);
+    background-size:10px 10px;background-position:0 0,0 5px,5px -5px,-5px 0px;
+  }
+  .gradbar-fill{position:absolute;inset:0;border-radius:3px;}
+  .stopZone{position:absolute;left:-1px;right:-1px;}
+  .stopZone.top{top:-17px;height:17px;}
+  .stopZone.bottom{bottom:-15px;height:15px;}
+  .stop{position:absolute;top:1px;width:14px;transform:translateX(-7px);display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 1px 1px #0008);touch-action:none;user-select:none;}
+  .stop .chip{width:12px;height:9px;border-radius:2px 2px 1px 1px;border:1px solid #0006;box-sizing:border-box;}
+  .stop .arrow{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid #ccc;margin-top:-1px;}
+  .stop.selected .arrow{border-top-color:var(--accent2);}
+  .stop.selected .chip{box-shadow:0 0 0 1.5px var(--accent2);}
+  .astop{position:absolute;bottom:1px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #bbb;transform:translateX(-6px);touch-action:none;user-select:none;}
+  .astop.selected{border-bottom-color:var(--accent2);}
+  .astop.snapped{border-bottom-color:#ffd75e;}
+
+  .picker{display:flex;flex-direction:column;gap:10px;user-select:none;}
+  #svSquare{position:relative;width:100%;height:calc(140px * var(--panel-scale));border-radius:4px;border:1px solid var(--line);cursor:crosshair;}
+  #svThumb{position:absolute;width:10px;height:10px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 2px #000;transform:translate(-50%,-50%);pointer-events:none;}
+  #hueSlider{position:relative;width:100%;height:calc(14px * var(--panel-scale));border-radius:7px;
+    background:linear-gradient(to right,#f00 0%,#ff0 17%,#0f0 33%,#0ff 50%,#00f 67%,#f0f 83%,#f00 100%);}
+  #hueThumb{position:absolute;top:-2px;width:10px;height:calc(18px * var(--panel-scale));border-radius:3px;border:2px solid #fff;box-shadow:0 0 2px #000;transform:translateX(-50%);pointer-events:none;}
+  #alphaSlider{position:relative;width:100%;height:calc(14px * var(--panel-scale));border-radius:7px;
+    background-image:linear-gradient(45deg,#3a3b3f 25%,transparent 25%),linear-gradient(-45deg,#3a3b3f 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3a3b3f 75%),linear-gradient(-45deg,transparent 75%,#3a3b3f 75%);
+    background-size:8px 8px;background-position:0 0,0 4px,4px -4px,-4px 0px;}
+  #alphaSliderFill{position:absolute;inset:0;border-radius:7px;}
+  #alphaThumb{position:absolute;top:-2px;width:10px;height:calc(18px * var(--panel-scale));border-radius:3px;border:2px solid #fff;box-shadow:0 0 2px #000;transform:translateX(-50%);pointer-events:none;}
+  .fields{display:grid;grid-template-columns:22px 1fr;gap:6px 8px;align-items:center;font-size:11px;color:var(--text-dim);}
+  .fields input[type=number]{width:100%;background:var(--bg3);border:1px solid var(--line);color:var(--text);border-radius:3px;padding:3px 5px;font-size:11px;}
+  .hexrow{display:flex;align-items:center;gap:6px;margin-top:2px;}
+  .hexrow input{flex:1;background:var(--bg3);border:1px solid var(--line);color:var(--text);border-radius:3px;padding:4px 6px;font-size:12px;text-transform:uppercase;}
+  .preview{width:calc(36px * var(--panel-scale));height:calc(36px * var(--panel-scale));border-radius:4px;border:1px solid var(--line);
+    background-image:linear-gradient(45deg,#3a3b3f 25%,transparent 25%),linear-gradient(-45deg,#3a3b3f 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3a3b3f 75%),linear-gradient(-45deg,transparent 75%,#3a3b3f 75%);
+    background-size:10px 10px;background-position:0 0,0 5px,5px -5px,-5px 0px;}
+  .preview-inner{width:100%;height:100%;border-radius:4px;}
+  .rowflex{display:flex;gap:10px;align-items:center;}
+  #fileInput{display:none;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <h1>Lottie Paint</h1>
+    <button class="btn" id="openBtn">Открыть файл...</button>
+    <button class="btn" id="exportJsonBtn">Экспорт JSON</button>
+    <button class="btn" id="exportTgsBtn">Экспорт TGS</button>
+    <input type="file" id="fileInput" accept=".json,.tgs">
+    <div id="filters">
+      <span style="color:var(--text-dim)">Show:</span>
+      <label><input type="checkbox" data-f="gfill" checked> Gradient</label>
+      <label><input type="checkbox" data-f="gstroke" checked> Gradient Stroke</label>
+      <label><input type="checkbox" data-f="stroke" checked> Stroke</label>
+      <label><input type="checkbox" data-f="fill" checked> Fill</label>
+    </div>
+    <div id="linearWrap">
+      <label><input type="checkbox" id="linearMode"> Линейный режим</label>
+      <label style="margin-left:10px"><input type="checkbox" id="highlightSelected"> Подсвечивать выделенный элемент</label>
+    </div>
+    <div id="bgControls">
+      <span>Фон:</span>
+      <button class="btn bgOption active" id="bgChecker" title="Прозрачный (шахматка)">▦</button>
+      <input type="color" id="bgColorPicker" value="#2b2d30" title="Цвет фона">
+    </div>
+  </div>
+  <div id="main">
+    <div id="treePanel">
+      <div id="treeHeader">Структура стикера</div>
+      <div id="tree"></div>
+    </div>
+    <div id="editorPanel">
+      <h2>Свойство</h2>
+      <div id="editorBody"><div class="empty-hint">Выберите fill, stroke или gradient в дереве слева, чтобы отредактировать цвет.</div></div>
+    </div>
+    <div id="editorResizer" title="Растянуть панель"></div>
+    <div id="centerPanel">
+      <div id="viewport" class="checker">
+        <div id="dropHint">Перетащите сюда .json или .tgs файл<br>или нажмите «Открыть файл»</div>
+        <div id="lottieContainer"></div>
+      </div>
+      <div id="player">
+        <button id="playBtn">►</button>
+        <input type="range" id="scrub" min="0" max="100" value="0" step="1">
+        <div id="frameLabel">0 / 0</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>(function(){
+  "use strict";
+  let animData = null;      
+  let anim = null;          
+  let currentSelection = null; 
+  let filters = {gfill:true, gstroke:true, stroke:true, fill:true};
+  let linearMode = false;
+  let isPlaying = false;
+  let undoStack = [];
+  let redoStack = [];
+  const HISTORY_LIMIT = 100;
+  let editSessionActive = false;
+  let editSessionSnapshot = null;
+  function snapshotState(){ return animData ? JSON.stringify(animData) : null; }
+  function beginEditSession(){
+    if(!animData || editSessionActive) return;
+    editSessionSnapshot = snapshotState();
+    editSessionActive = true;
+  }
+  function endEditSession(){
+    if(!editSessionActive) return;
+    const now = snapshotState();
+    if(editSessionSnapshot !== null && now !== editSessionSnapshot){
+      undoStack.push(editSessionSnapshot);
+      if(undoStack.length > HISTORY_LIMIT) undoStack.shift();
+      redoStack.length = 0;
+    }
+    editSessionActive = false;
+    editSessionSnapshot = null;
+  }
+  function applyHistoryState(jsonStr){
+    animData = JSON.parse(jsonStr);
+    currentSelection = null;
+    highlightLayerIndex = -1;
+    highlightRef = null;
+    highlightType = null;
+    clearHighlightClone();
+    if(typeof renderEditor === 'function') renderEditor();
+    buildTree();
+    applyChangeAndRefresh();
+  }
+  function performUndo(){
+    if(editSessionActive) endEditSession();
+    if(!undoStack.length) return;
+    const cur = snapshotState();
+    const prev = undoStack.pop();
+    if(cur !== null) redoStack.push(cur);
+    applyHistoryState(prev);
+  }
+  function performRedo(){
+    if(!redoStack.length) return;
+    const cur = snapshotState();
+    const next = redoStack.pop();
+    if(cur !== null) undoStack.push(cur);
+    applyHistoryState(next);
+  }
+  window.addEventListener('keydown', e=>{
+    const tag = document.activeElement && document.activeElement.tagName;
+    if(tag==='INPUT' || tag==='TEXTAREA') return;
+    if((e.ctrlKey || e.metaKey) && e.code==='KeyZ' && !e.shiftKey){
+      e.preventDefault();
+      performUndo();
+    } else if((e.ctrlKey || e.metaKey) && e.code==='KeyZ' && e.shiftKey){
+      e.preventDefault();
+      performRedo();
+    } else if((e.ctrlKey || e.metaKey) && e.code==='KeyY'){
+      e.preventDefault();
+      performRedo();
+    }
+  });
+  const treeEl = document.getElementById('tree');
+  const editorBody = document.getElementById('editorBody');
+  const container = document.getElementById('lottieContainer');
+  const dropHint = document.getElementById('dropHint');
+  const viewport = document.getElementById('viewport');
+  (function(){
+    const editorPanel = document.getElementById('editorPanel');
+    const resizer = document.getElementById('editorResizer');
+    const baseWidth = 290;
+    let dragging = false, startX = 0, startW = 0;
+    resizer.addEventListener('mousedown', e=>{
+      dragging = true; startX = e.clientX; startW = editorPanel.getBoundingClientRect().width;
+      resizer.classList.add('dragging');
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', e=>{
+      if(!dragging) return;
+      let w = startW + (e.clientX - startX);
+      w = Math.max(baseWidth, Math.min(w, window.innerWidth - 400));
+      editorPanel.style.width = w + 'px';
+      const scale = w / baseWidth;
+      editorPanel.style.setProperty('--panel-scale', scale.toFixed(3));
+    });
+    window.addEventListener('mouseup', ()=>{
+      if(!dragging) return;
+      dragging = false;
+      resizer.classList.remove('dragging');
+      document.body.style.userSelect = '';
+    });
+  })();
+  let highlightEnabled = false;
+  let highlightLayerIndex = -1;
+  let highlightRef = null;
+  let highlightType = null; 
+  let highlightClone = null;
+  document.getElementById('highlightSelected').addEventListener('change', e=>{
+    highlightEnabled = e.target.checked;
+    updateHighlightBox();
+  });
+  function clearHighlightClone(){
+    if(highlightClone && highlightClone.parentNode) highlightClone.parentNode.removeChild(highlightClone);
+    highlightClone = null;
+  }
+  const SHAPE_SEL = 'path,rect,circle,ellipse,polygon,polyline,line';
+  function findTargetPaths(g){
+    const paths = Array.from(g.querySelectorAll(SHAPE_SEL));
+    if(!paths.length || !highlightType || !highlightRef) return paths;
+    if(highlightType==='fill' || highlightType==='stroke'){
+      const rgba = getStaticOrFirstColor(highlightRef.c);
+      const target = [Math.round((rgba[0]||0)*255), Math.round((rgba[1]||0)*255), Math.round((rgba[2]||0)*255)];
+      const attr = highlightType==='fill' ? 'fill' : 'stroke';
+      const matches = paths.filter(p=>{
+        const val = (p.style && p.style[attr]) || p.getAttribute(attr) || '';
+        const m = val.match(/rgba?\(([^)]+)\)/i);
+        if(!m) return false;
+        const parts = m[1].split(',').map(s=>parseFloat(s));
+        return Math.abs((parts[0]||0)-target[0])<=2 && Math.abs((parts[1]||0)-target[1])<=2 && Math.abs((parts[2]||0)-target[2])<=2;
+      });
+      return matches;
+    }
+    const attr = highlightType==='gfill' ? 'fill' : 'stroke';
+    const parsed = parseGradientStops(highlightRef.g);
+    const svgRoot = g.ownerSVGElement || g.closest('svg');
+    const grads = svgRoot ? Array.from(svgRoot.querySelectorAll('linearGradient,radialGradient')) : [];
+    let bestId = null, bestScore = Infinity;
+    for(const gr of grads){
+      const stops = Array.from(gr.querySelectorAll('stop'));
+      if(!stops.length) continue;
+      let score = Math.abs(stops.length - parsed.colorStops.length) * 50;
+      const n = Math.min(stops.length, parsed.colorStops.length);
+      for(let i=0;i<n;i++){
+        const sc = parsed.colorStops[i];
+        const col = (stops[i].style && stops[i].style.stopColor) || stops[i].getAttribute('stop-color') || '';
+        const m = col.match(/rgba?\(([^)]+)\)/i);
+        if(!m){ score += 999; continue; }
+        const parts = m[1].split(',').map(s=>parseFloat(s));
+        score += Math.abs((parts[0]||0)-sc.r) + Math.abs((parts[1]||0)-sc.g) + Math.abs((parts[2]||0)-sc.b);
+      }
+      if(score < bestScore){ bestScore = score; bestId = gr.getAttribute('id'); }
+    }
+    if(!bestId) return [];
+    const matches = paths.filter(p=>{
+      const val = (p.style && p.style[attr]) || p.getAttribute(attr) || '';
+      return val.indexOf('#'+bestId) !== -1;
+    });
+    return matches;
+  }
+  function updateHighlightBox(){
+    clearHighlightClone();
+    if(!highlightEnabled || !anim || highlightLayerIndex < 0 || !anim.renderer || !anim.renderer.elements) return;
+    const rendererEl = anim.renderer.elements[highlightLayerIndex];
+    const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
+    if(!g) return;
+    const svgRoot = g.ownerSVGElement || g.closest('svg');
+    if(!svgRoot) return;
+    const origPaths = Array.from(g.querySelectorAll(SHAPE_SEL));
+    const matched = new Set(findTargetPaths(g));
+    const clone = g.cloneNode(true);
+    clone.removeAttribute('id');
+    clone.removeAttribute('mask');
+    clone.removeAttribute('clip-path');
+    clone.setAttribute('pointer-events','none');
+    clone.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));
+    clone.querySelectorAll('mask,clipPath').forEach(n=>n.remove());
+    clone.querySelectorAll('[mask]').forEach(n=>n.removeAttribute('mask'));
+    clone.querySelectorAll('[clip-path]').forEach(n=>n.removeAttribute('clip-path'));
+    const clonePaths = Array.from(clone.querySelectorAll(SHAPE_SEL));
+    clonePaths.forEach((cp, i)=>{
+      if(matched.has(origPaths[i])){
+        cp.style.fill = 'none';
+        cp.style.stroke = 'var(--accent2)';
+        cp.style.strokeWidth = '1.5';
+        cp.style.strokeOpacity = '0.95';
+        cp.setAttribute('vector-effect','non-scaling-stroke');
+      } else {
+        cp.remove();
+      }
+    });
+    svgRoot.appendChild(clone);
+    highlightClone = clone;
+  }
+  const bgChecker = document.getElementById('bgChecker');
+  const bgColorPicker = document.getElementById('bgColorPicker');
+  bgChecker.addEventListener('click', ()=>{
+    viewport.classList.add('checker');
+    viewport.style.background = '';
+    bgChecker.classList.add('active');
+    bgColorPicker.classList.remove('active');
+  });
+  bgColorPicker.addEventListener('input', ()=>{
+    viewport.classList.remove('checker');
+    viewport.style.background = bgColorPicker.value;
+    bgChecker.classList.remove('active');
+    bgColorPicker.classList.add('active');
+  });
+  const fileInput = document.getElementById('fileInput');
+  document.getElementById('openBtn').addEventListener('click', ()=>fileInput.click());
+  fileInput.addEventListener('change', e=>{
+    if(e.target.files[0]) loadFile(e.target.files[0]);
+  });
+  viewport.addEventListener('dragover', e=>{e.preventDefault();});
+  viewport.addEventListener('drop', e=>{
+    e.preventDefault();
+    if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+  function loadFile(file){
+    const reader = new FileReader();
+    const isTgs = /\.tgs$/i.test(file.name);
+    reader.onload = function(ev){
+      try{
+        let jsonStr;
+        if(isTgs){
+          const bytes = new Uint8Array(ev.target.result);
+          jsonStr = pako.inflate(bytes, {to:'string'});
+        } else {
+          jsonStr = ev.target.result;
+        }
+        const data = JSON.parse(jsonStr);
+        initAnimation(data);
+      }catch(err){
+        alert('Не удалось прочитать файл: '+err.message);
+      }
+    };
+    if(isTgs) reader.readAsArrayBuffer(file);
+    else reader.readAsText(file);
+  }
+  document.getElementById('exportJsonBtn').addEventListener('click', ()=>{
+    if(!animData){ alert('Сначала загрузите файл'); return; }
+    const blob = new Blob([JSON.stringify(animData)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'edited.json';
+    a.click();
+  });
+  document.getElementById('exportTgsBtn').addEventListener('click', ()=>{
+    if(!animData){ alert('Сначала загрузите файл'); return; }
+    const gzipped = pako.gzip(JSON.stringify(animData));
+    const blob = new Blob([gzipped], {type:'application/gzip'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'edited.tgs';
+    a.click();
+  });
+  function initAnimation(data){
+    animData = data;
+    dropHint.style.display = 'none';
+    createRenderer(0, false);
+    buildTree();
+    currentSelection = null;
+    renderEditor();
+  }
+  const containerB = document.createElement('div');
+  containerB.id = 'lottieContainerB';
+  containerB.style.display = 'none';
+  container.parentNode.insertBefore(containerB, container.nextSibling);
+  let activeContainer = container;
+  let activeIsFirst = true;
+  let loadInFlight = false;
+  let pendingRequest = null;
+  function createRenderer(prevFrame, wasPlaying){
+    if(loadInFlight){
+      pendingRequest = {prevFrame, wasPlaying};
+      return;
+    }
+    loadInFlight = true;
+    const nextContainer = activeIsFirst ? containerB : container;
+    let nextAnim;
+    try{
+      nextAnim = lottie.loadAnimation({
+        container: nextContainer,
+        renderer: 'svg',
+        loop: true,
+        autoplay: false,
+        animationData: JSON.parse(JSON.stringify(animData))
+      });
+    }catch(err){
+      console.error('Lottie load failed:', err);
+      loadInFlight = false;
+      return;
+    }
+    nextAnim.addEventListener('DOMLoaded', ()=>{
+      try{
+        const f = Math.min(prevFrame, Math.max(0, nextAnim.totalFrames-1));
+        if(wasPlaying){ nextAnim.goToAndPlay(f, true); isPlaying = true; }
+        else { nextAnim.goToAndStop(f, true); isPlaying = false; }
+        nextAnim.addEventListener('enterFrame', updateHighlightBox);
+        const oldAnim = anim;
+        nextContainer.style.display = '';
+        activeContainer.style.display = 'none';
+        activeContainer = nextContainer;
+        activeIsFirst = !activeIsFirst;
+        anim = nextAnim;
+        if(oldAnim) oldAnim.destroy();
+        setupScrub();
+        updatePlayBtn();
+        updateHighlightBox();
+      }catch(err){
+        console.error('Lottie swap failed:', err);
+      }finally{
+        loadInFlight = false;
+        if(pendingRequest){
+          const req = pendingRequest;
+          pendingRequest = null;
+          createRenderer(req.prevFrame, req.wasPlaying);
+        }
+      }
+    }, {once:true});
+  }
+  function applyChangeAndRefresh(){
+    const prevFrame = anim ? anim.currentFrame : 0;
+    const wasPlaying = isPlaying;
+    createRenderer(prevFrame, wasPlaying);
+  }
+  let lastCommitTime = 0;
+  let commitPending = false;
+  function scheduleRefresh(){
+    const now = performance.now();
+    if(now - lastCommitTime > 90){
+      lastCommitTime = now;
+      applyChangeAndRefresh();
+    } else if(!commitPending){
+      commitPending = true;
+      setTimeout(()=>{
+        commitPending = false;
+        lastCommitTime = performance.now();
+        applyChangeAndRefresh();
+      }, 90);
+    }
+  }
+  const scrub = document.getElementById('scrub');
+  const frameLabel = document.getElementById('frameLabel');
+  const playBtn = document.getElementById('playBtn');
+  let scrubDragging = false;
+  function setupScrub(){
+    scrub.min = 0;
+    scrub.max = Math.max(1, Math.round(anim.totalFrames));
+    scrub.value = Math.round(anim.currentFrame);
+    frameLabel.textContent = Math.round(anim.currentFrame)+' / '+Math.round(anim.totalFrames);
+    anim.addEventListener('enterFrame', ()=>{
+      if(!scrubDragging){
+        scrub.value = Math.round(anim.currentFrame);
+      }
+      frameLabel.textContent = Math.round(anim.currentFrame)+' / '+Math.round(anim.totalFrames);
+    });
+  }
+  scrub.addEventListener('input', ()=>{
+    if(!anim) return;
+    scrubDragging = true;
+    anim.goToAndStop(Number(scrub.value), true);
+    frameLabel.textContent = Math.round(anim.currentFrame)+' / '+Math.round(anim.totalFrames);
+    updateHighlightBox();
+  });
+  scrub.addEventListener('change', ()=>{ scrubDragging = false; });
+  playBtn.addEventListener('click', ()=>{
+    if(!anim) return;
+    if(isPlaying){ anim.pause(); isPlaying=false; }
+    else { anim.play(); isPlaying=true; }
+    updatePlayBtn();
+  });
+  function updatePlayBtn(){ playBtn.textContent = isPlaying ? '❚❚' : '►'; }
+  window.addEventListener('keydown', e=>{
+    if(!anim) return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if(tag==='INPUT' || tag==='TEXTAREA') return;
+    if(e.code==='Space'){
+      e.preventDefault();
+      playBtn.click();
+    } else if(e.code==='ArrowRight' && !currentSelection){
+      anim.goToAndStop(Math.min(anim.totalFrames-1, anim.currentFrame+1), true);
+    } else if(e.code==='ArrowLeft' && !currentSelection){
+      anim.goToAndStop(Math.max(0, anim.currentFrame-1), true);
+    }
+  });
+  document.querySelectorAll('#filters input[type=checkbox]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      filters[cb.dataset.f] = cb.checked;
+      buildTree();
+    });
+  });
+  document.getElementById('linearMode').addEventListener('change', e=>{
+    linearMode = e.target.checked;
+    buildTree();
+  });
+  const ICONS = {
+    layer: '<svg viewBox="0 0 16 16"><path d="M8 2l6 3-6 3-6-3 6-3z" fill="#8a8c90"/><path d="M2 8l6 3 6-3M2 11l6 3 6-3" stroke="#8a8c90" stroke-width="1" fill="none"/></svg>',
+    fill: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#4dc47d"/></svg>',
+    stroke: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#4dc47d" stroke-width="2"/></svg>',
+    gfill: '<svg viewBox="0 0 16 16"><defs><linearGradient id="gfIcon" x1="0" x2="1"><stop offset="0" stop-color="#4dc4e8"/><stop offset="1" stop-color="#e84dbd"/></linearGradient></defs><circle cx="8" cy="8" r="6" fill="url(#gfIcon)"/></svg>',
+    gstroke: '<svg viewBox="0 0 16 16"><defs><linearGradient id="gsIcon" x1="0" x2="1"><stop offset="0" stop-color="#4dc4e8"/><stop offset="1" stop-color="#e84dbd"/></linearGradient></defs><circle cx="8" cy="8" r="6" fill="none" stroke="url(#gsIcon)" stroke-width="2"/></svg>'
+  };
+  const CAT_LABELS = {gfill:'Gradients', gstroke:'Gradient Strokes', fill:'Fills', stroke:'Strokes'};
+  const CAT_ORDER = ['gfill','gstroke','fill','stroke'];
+  function collectCategories(items, prefix, layerIndex){
+    const cats = {gfill:[], gstroke:[], fill:[], stroke:[]};
+    (function walk(items, path){
+      for(const it of (items||[])){
+        if(!it || typeof it !== 'object') continue;
+        if(it.ty === 'gr'){
+          walk(it.it, path.concat(it.nm || 'Group'));
+        } else if(it.ty === 'fl'){
+          cats.fill.push({ref: it, label: it.nm || 'Fill', path: path, layerIndex: layerIndex});
+        } else if(it.ty === 'st'){
+          cats.stroke.push({ref: it, label: it.nm || 'Stroke', path: path, layerIndex: layerIndex});
+        } else if(it.ty === 'gf'){
+          cats.gfill.push({ref: it, label: it.nm || 'Gradient Fill', path: path, layerIndex: layerIndex});
+        } else if(it.ty === 'gs'){
+          cats.gstroke.push({ref: it, label: it.nm || 'Gradient Stroke', path: path, layerIndex: layerIndex});
+        }
+      }
+    })(items, prefix || []);
+    return cats;
+  }
+  function categoriesEmpty(cats){
+    return cats.gfill.length===0 && cats.gstroke.length===0 && cats.fill.length===0 && cats.stroke.length===0;
+  }
+  function mergeCategories(target, src, layerName){
+    for(const k of CAT_ORDER){
+      for(const it of src[k]){
+        target[k].push({ref: it.ref, label: (layerName ? layerName+' / ' : '') + it.label, path: it.path, layerIndex: it.layerIndex});
+      }
+    }
+  }
+  const openLayerNames = new Set();
+  let itemRowsList = []; 
+  function buildTree(){
+    treeEl.innerHTML = '';
+    itemRowsList = [];
+    if(!animData || !animData.layers){ return; }
+    if(linearMode){
+      const all = {gfill:[], gstroke:[], fill:[], stroke:[]};
+      animData.layers.forEach((layer, layerIndex)=>{
+        if(layer.ty !== 4 || !layer.shapes) return;
+        const cats = collectCategories(layer.shapes, [], layerIndex);
+        mergeCategories(all, cats, layer.nm);
+      });
+      renderCategoryPanel(treeEl, all, false);
+      return;
+    }
+    animData.layers.forEach((layer, layerIndex)=>{
+      if(layer.ty !== 4 || !layer.shapes) return;
+      const cats = collectCategories(layer.shapes, [], layerIndex);
+      const hasAny = !categoriesEmpty(cats);
+      const layerNode = document.createElement('div');
+      layerNode.className = 'node';
+      const row = makeRowShell('layer', layer.nm || 'Layer', hasAny);
+      layerNode.appendChild(row.row);
+      const body = document.createElement('div');
+      const layerKey = layerIndex+':'+(layer.nm||'');
+      const wasOpen = openLayerNames.has(layerKey);
+      body.style.display = wasOpen ? 'block' : 'none';
+      body.style.paddingLeft = '10px';
+      if(wasOpen) row.caret.classList.add('open');
+      if(hasAny){
+        renderCategoryPanel(body, cats, true);
+        const toggle = ()=>{
+          toggleOpen(row.caret, body);
+          if(body.style.display === 'none') openLayerNames.delete(layerKey);
+          else openLayerNames.add(layerKey);
+        };
+        row.caret.addEventListener('click', ev=>{ ev.stopPropagation(); toggle(); });
+        row.row.addEventListener('click', toggle);
+      }
+      layerNode.appendChild(body);
+      treeEl.appendChild(layerNode);
+    });
+  }
+  function renderCategoryPanel(parentEl, cats, compact){
+    for(const catKey of CAT_ORDER){
+      if(!filters[catKey]) continue;
+      const list = cats[catKey];
+      if(!list.length) continue;
+      const header = document.createElement('div');
+      header.className = 'catHeader';
+      header.textContent = CAT_LABELS[catKey] + ':';
+      parentEl.appendChild(header);
+      list.forEach((item, idx)=>{
+        const row = makeItemRow(catKey, item.label || ((idx+1)+''), item.ref, item.layerIndex);
+        row.style.paddingLeft = compact ? '10px' : '14px';
+        parentEl.appendChild(row);
+      });
+    }
+  }
+  function toggleOpen(caret, wrap){
+    const open = wrap.style.display !== 'none';
+    wrap.style.display = open ? 'none' : 'block';
+    caret.classList.toggle('open', !open);
+  }
+  function makeRowShell(type, name, expandable){
+    const row = document.createElement('div');
+    row.className = 'row';
+    const caret = document.createElement('div');
+    caret.className = 'caret' + (expandable ? '' : ' hidden');
+    caret.textContent = '▶';
+    row.appendChild(caret);
+    const icon = document.createElement('div');
+    icon.className = 'icon';
+    icon.innerHTML = ICONS[type] || ICONS.layer;
+    row.appendChild(icon);
+    const nm = document.createElement('div');
+    nm.className = 'nm';
+    nm.textContent = name;
+    row.appendChild(nm);
+    return {row, caret};
+  }
+  function makeItemRow(type, name, ref, layerIndex){
+    const row = document.createElement('div');
+    row.className = 'row';
+    const caret = document.createElement('div');
+    caret.className = 'caret hidden';
+    row.appendChild(caret);
+    const icon = document.createElement('div');
+    icon.className = 'icon';
+    icon.innerHTML = ICONS[type];
+    row.appendChild(icon);
+    const nm = document.createElement('div');
+    nm.className = 'nm leaf';
+    nm.textContent = name;
+    row.appendChild(nm);
+    const sw = document.createElement('div');
+    sw.className = 'swatch';
+    row.appendChild(sw);
+    itemRowsList.push({sw, type, ref});
+    updateSwatch(sw, type, ref);
+    row.addEventListener('click', ()=>{
+      document.querySelectorAll('.row.selected').forEach(r=>r.classList.remove('selected'));
+      row.classList.add('selected');
+      currentSelection = (type==='fill'||type==='stroke')
+        ? {kind:'color', ref}
+        : {kind:'gradient', ref};
+      highlightLayerIndex = (typeof layerIndex === 'number') ? layerIndex : -1;
+      highlightRef = ref;
+      highlightType = type;
+      updateHighlightBox();
+      renderEditor();
+    });
+    return row;
+  }
+  function updateSwatch(sw, type, ref){
+    if(type==='fill' || type==='stroke'){
+      sw.style.background = colorArrToCss(getStaticOrFirstColor(ref.c));
+    } else {
+      sw.style.background = gradientToCssPreview(ref.g);
+    }
+  }
+  function getStaticOrFirstColor(c){
+    if(!c) return [1,1,1,1];
+    if(Array.isArray(c.k)){
+      if(typeof c.k[0] === 'number') return c.k;
+      return (c.k[0] && c.k[0].s) || [1,1,1,1];
+    }
+    return [1,1,1,1];
+  }
+  function clampNum(v, min, max, fallback){
+    v = Number(v);
+    if(!isFinite(v)) v = (fallback===undefined?min:fallback);
+    return Math.max(min, Math.min(max, v));
+  }
+  function setStaticColor(c, rgba){
+    if(!c) return;
+    const r = clampNum(rgba[0],0,1,0), g = clampNum(rgba[1],0,1,0), b = clampNum(rgba[2],0,1,0);
+    const a = rgba.length>3 ? clampNum(rgba[3],0,1,1) : 1;
+    if(Array.isArray(c.k) && typeof c.k[0] === 'number'){
+      c.k[0]=r; c.k[1]=g; c.k[2]=b;
+      if(c.k.length>3) c.k[3]=a;
+    } else if(Array.isArray(c.k)){
+      for(const kf of c.k){
+        if(kf.s){ kf.s[0]=r; kf.s[1]=g; kf.s[2]=b; if(kf.s.length>3) kf.s[3]=a; }
+        if(kf.e){ kf.e[0]=r; kf.e[1]=g; kf.e[2]=b; if(kf.e.length>3) kf.e[3]=a; }
+      }
+    }
+  }
+  function colorArrToCss(rgba){
+    const r=Math.round((rgba[0]||0)*255), g=Math.round((rgba[1]||0)*255), b=Math.round((rgba[2]||0)*255);
+    const a = rgba.length>3 ? rgba[3] : 1;
+    return 'rgba('+r+','+g+','+b+','+a+')';
+  }
+  function rgbToHex(r,g,b){
+    return '#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');
+  }
+  function hexToRgb(hex){
+    hex = (hex||'').replace('#','').trim();
+    if(!/^[0-9a-fA-F]{3}$/.test(hex) && !/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+    if(hex.length===3) hex = hex.split('').map(c=>c+c).join('');
+    const num = parseInt(hex,16);
+    return [(num>>16)&255, (num>>8)&255, num&255];
+  }
+  function rgbToHsv(r,g,b){
+    r/=255; g/=255; b/=255;
+    const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+    let h=0;
+    if(d!==0){
+      if(max===r) h = ((g-b)/d)%6;
+      else if(max===g) h = (b-r)/d + 2;
+      else h = (r-g)/d + 4;
+      h*=60; if(h<0) h+=360;
+    }
+    const s = max===0?0:d/max;
+    const v = max;
+    return [h,s,v];
+  }
+  function hsvToRgb(h,s,v){
+    const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c;
+    let r=0,g=0,b=0;
+    if(h<60){r=c;g=x;b=0;} else if(h<120){r=x;g=c;b=0;} else if(h<180){r=0;g=c;b=x;}
+    else if(h<240){r=0;g=x;b=c;} else if(h<300){r=x;g=0;b=c;} else {r=c;g=0;b=x;}
+    return [(r+m)*255,(g+m)*255,(b+m)*255];
+  }
+  function getGradientStatic(g){
+    if(!g || !g.k) return null;
+    if(Array.isArray(g.k.k) && typeof g.k.k[0] === 'number') return g.k.k;
+    if(Array.isArray(g.k.k) && g.k.k[0] && g.k.k[0].s) return g.k.k[0].s;
+    return null;
+  }
+  function setGradientStatic(g, arr){
+    if(!g || !g.k) return;
+    if(Array.isArray(g.k.k) && typeof g.k.k[0] === 'number'){
+      g.k.k.length = 0;
+      for(let i=0;i<arr.length;i++) g.k.k.push(arr[i]);
+    } else if(Array.isArray(g.k.k)){
+      for(const kf of g.k.k){
+        if(kf.s){ kf.s.length=0; for(let i=0;i<arr.length;i++) kf.s.push(arr[i]); }
+        if(kf.e){ kf.e.length=0; for(let i=0;i<arr.length;i++) kf.e.push(arr[i]); }
+      }
+    }
+  }
+  function parseGradientStops(g){
+    const arr = getGradientStatic(g);
+    const p = g.p || Math.floor(arr.length/4);
+    const colorStops = [];
+    for(let i=0;i<p;i++){
+      const off = i*4;
+      colorStops.push({offset: arr[off], r: arr[off+1]*255, g: arr[off+2]*255, b: arr[off+3]*255});
+    }
+    const alphaStops = [];
+    const alphaStart = p*4;
+    const remaining = arr.length - alphaStart;
+    if(remaining > 0){
+      const count = Math.floor(remaining/2);
+      for(let i=0;i<count;i++){
+        const off = alphaStart + i*2;
+        alphaStops.push({offset: arr[off], alpha: arr[off+1]});
+      }
+    }
+    return {p, colorStops, alphaStops};
+  }
+  function writeGradientStops(g, parsed){
+    const arr = [];
+    const sortedColor = parsed.colorStops.slice().sort((a,b)=>a.offset-b.offset);
+    for(const s of sortedColor){
+      const off = clampNum(s.offset,0,1,0);
+      arr.push(off, clampNum(s.r,0,255,255)/255, clampNum(s.g,0,255,255)/255, clampNum(s.b,0,255,255)/255);
+    }
+    const sortedAlpha = parsed.alphaStops.slice().sort((a,b)=>a.offset-b.offset);
+    for(const a of sortedAlpha){
+      arr.push(clampNum(a.offset,0,1,0), clampNum(a.alpha,0,1,1));
+    }
+    g.p = sortedColor.length;
+    setGradientStatic(g, arr);
+  }
+  function gradientToCssPreview(g){
+    try{
+      const parsed = parseGradientStops(g);
+      const stops = parsed.colorStops.slice().sort((a,b)=>a.offset-b.offset)
+        .map(s=> 'rgb('+Math.round(s.r)+','+Math.round(s.g)+','+Math.round(s.b)+') '+(s.offset*100)+'%');
+      return 'linear-gradient(90deg,'+stops.join(',')+')';
+    }catch(e){ return '#888'; }
+  }
+  function renderEditor(){
+    editorBody.innerHTML = '';
+    if(!currentSelection){
+      editorBody.innerHTML = '<div class="empty-hint">Выберите fill, stroke или gradient в дереве слева, чтобы отредактировать цвет.</div>';
+      return;
+    }
+    if(currentSelection.kind === 'color'){
+      renderColorEditor(currentSelection.ref);
+    } else {
+      renderGradientEditor(currentSelection.ref);
+    }
+  }
+  function refreshSwatches(){
+    for(const item of itemRowsList){
+      updateSwatch(item.sw, item.type, item.ref);
+    }
+  }
+  function renderColorEditor(ref){
+    const rgba = getStaticOrFirstColor(ref.c);
+    const wrap = document.createElement('div');
+    wrap.className = 'picker';
+    const previewRow = document.createElement('div');
+    previewRow.className = 'rowflex';
+    const prev = document.createElement('div');
+    prev.className = 'preview';
+    const prevInner = document.createElement('div');
+    prevInner.className = 'preview-inner';
+    prev.appendChild(prevInner);
+    previewRow.appendChild(prev);
+    const label = document.createElement('div');
+    label.textContent = ref.nm || (ref.ty==='fl' ? 'Fill Color' : 'Stroke Color');
+    label.style.color = 'var(--text-dim)';
+    previewRow.appendChild(label);
+    wrap.appendChild(previewRow);
+    const picker = buildColorPicker(rgba, (newRgba, final)=>{
+      beginEditSession();
+      setStaticColor(ref.c, newRgba);
+      prevInner.style.background = colorArrToCss(newRgba);
+      if(final){ applyChangeAndRefresh(); refreshSwatches(); endEditSession(); }
+      else { scheduleRefresh(); }
+    });
+    prevInner.style.background = colorArrToCss(rgba);
+    wrap.appendChild(picker);
+    editorBody.appendChild(wrap);
+  }
+  function buildColorPicker(initialRgba, onChange){
+    const wrap = document.createElement('div');
+    wrap.className='picker';
+    let [r,g,b] = [initialRgba[0]*255, initialRgba[1]*255, initialRgba[2]*255];
+    let a = initialRgba.length>3 ? initialRgba[3] : 1;
+    let [h,s,v] = rgbToHsv(r,g,b);
+    const sv = document.createElement('div');
+    sv.id='svSquare';
+    const svThumb = document.createElement('div');
+    svThumb.id='svThumb';
+    sv.appendChild(svThumb);
+    wrap.appendChild(sv);
+    const hue = document.createElement('div');
+    hue.id='hueSlider';
+    const hueThumb = document.createElement('div');
+    hueThumb.id='hueThumb';
+    hue.appendChild(hueThumb);
+    wrap.appendChild(hue);
+    const alphaSlider = document.createElement('div');
+    alphaSlider.id='alphaSlider';
+    const alphaFill = document.createElement('div');
+    alphaFill.id='alphaSliderFill';
+    const alphaThumb = document.createElement('div');
+    alphaThumb.id='alphaThumb';
+    alphaSlider.appendChild(alphaFill);
+    alphaSlider.appendChild(alphaThumb);
+    wrap.appendChild(alphaSlider);
+    const hexRow = document.createElement('div');
+    hexRow.className='hexrow';
+    const hexInput = document.createElement('input');
+    hexInput.type='text';
+    hexRow.innerHTML = '<span style="color:var(--text-dim)">#</span>';
+    hexRow.appendChild(hexInput);
+    wrap.appendChild(hexRow);
+    const fields = document.createElement('div');
+    fields.className='fields';
+    function makeField(labelTxt, value, max, onInput){
+      const l = document.createElement('div'); l.textContent = labelTxt;
+      const i = document.createElement('input'); i.type='number'; i.min=0; i.max=max; i.value = Math.round(value);
+      i.addEventListener('change', ()=> onInput(Number(i.value)));
+      fields.appendChild(l); fields.appendChild(i);
+      return i;
+    }
+    const rField = makeField('R', r, 255, val=>{ r=clampNum(val,0,255,r); syncFromRgb(true); });
+    const gField = makeField('G', g, 255, val=>{ g=clampNum(val,0,255,g); syncFromRgb(true); });
+    const bField = makeField('B', b, 255, val=>{ b=clampNum(val,0,255,b); syncFromRgb(true); });
+    const aField = makeField('A', a*100, 100, val=>{ a=clampNum(val,0,100,a*100)/100; renderAll(false); fire(true); });
+    wrap.appendChild(fields);
+    function syncFromRgb(final){
+      [h,s,v] = rgbToHsv(r,g,b);
+      renderAll(true);
+      fire(final);
+    }
+    function fire(final){ onChange([r/255,g/255,b/255,a], final); }
+    function renderAll(updateFields){
+      sv.style.background = 'linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl('+h+',100%,50%))';
+      svThumb.style.left = (s*100)+'%';
+      svThumb.style.top = ((1-v)*100)+'%';
+      hueThumb.style.left = (h/360*100)+'%';
+      const rgbNow = hsvToRgb(h,s,v);
+      alphaFill.style.background = 'linear-gradient(to right, rgba('+Math.round(rgbNow[0])+','+Math.round(rgbNow[1])+','+Math.round(rgbNow[2])+',0), rgb('+Math.round(rgbNow[0])+','+Math.round(rgbNow[1])+','+Math.round(rgbNow[2])+'))';
+      alphaThumb.style.left = (a*100)+'%';
+      hexInput.value = rgbToHex(r,g,b).replace('#','');
+      if(updateFields){
+        rField.value = Math.round(r); gField.value = Math.round(g); bField.value = Math.round(b);
+      }
+      aField.value = Math.round(a*100);
+    }
+    renderAll(true);
+    let svRect=null;
+    function svPointer(e, final){
+      let x = (e.clientX-svRect.left)/svRect.width; x=Math.max(0,Math.min(1,x));
+      let y = (e.clientY-svRect.top)/svRect.height; y=Math.max(0,Math.min(1,y));
+      s = x; v = 1-y;
+      const rgb = hsvToRgb(h,s,v);
+      r=rgb[0]; g=rgb[1]; b=rgb[2];
+      renderAll(true);
+      fire(final);
+    }
+    let draggingSv=false;
+    sv.addEventListener('mousedown', e=>{ e.preventDefault(); draggingSv=true; svRect=sv.getBoundingClientRect(); svPointer(e,false); });
+    window.addEventListener('mousemove', e=>{ if(draggingSv) svPointer(e,false); });
+    window.addEventListener('mouseup', e=>{
+      if(draggingSv){ svPointer(e,true); draggingSv=false; }
+      if(draggingHue){ huePointer(e,true); draggingHue=false; }
+      if(draggingAlpha){ alphaPointer(e,true); draggingAlpha=false; }
+    });
+    let draggingHue=false;
+    let hueRect=null;
+    function huePointer(e, final){
+      let x=(e.clientX-hueRect.left)/hueRect.width; x=Math.max(0,Math.min(1,x));
+      h = x*360;
+      const rgb = hsvToRgb(h,s,v);
+      r=rgb[0]; g=rgb[1]; b=rgb[2];
+      renderAll(true);
+      fire(final);
+    }
+    hue.addEventListener('mousedown', e=>{ e.preventDefault(); draggingHue=true; hueRect=hue.getBoundingClientRect(); huePointer(e,false); });
+    window.addEventListener('mousemove', e=>{ if(draggingHue) huePointer(e,false); });
+    let draggingAlpha=false;
+    let alphaRect=null;
+    function alphaPointer(e, final){
+      let x=(e.clientX-alphaRect.left)/alphaRect.width; x=Math.max(0,Math.min(1,x));
+      a = x;
+      renderAll(false);
+      fire(final);
+    }
+    alphaSlider.addEventListener('mousedown', e=>{ e.preventDefault(); draggingAlpha=true; alphaRect=alphaSlider.getBoundingClientRect(); alphaPointer(e,false); });
+    window.addEventListener('mousemove', e=>{ if(draggingAlpha) alphaPointer(e,false); });
+    hexInput.addEventListener('change', ()=>{
+      const rgb = hexToRgb(hexInput.value);
+      if(!rgb){ hexInput.value = rgbToHex(r,g,b).replace('#',''); return; }
+      r=rgb[0]; g=rgb[1]; b=rgb[2];
+      syncFromRgb(true);
+    });
+    return wrap;
+  }
+  function renderGradientEditor(ref){
+    const parsed = parseGradientStops(ref.g);
+    let selectedColorIdx = 0;
+    let selectedIsAlpha = false;
+    let selectedAlphaIdx = -1;
+    let chainLinked = true;
+    const wrap = document.createElement('div');
+    wrap.className='gradbar-wrap';
+    const title = document.createElement('div');
+    title.textContent = ref.nm || (ref.ty==='gf' ? 'Gradient Fill' : 'Gradient Stroke');
+    title.style.color='var(--text-dim)';
+    title.style.marginBottom='6px';
+    wrap.appendChild(title);
+    const toolbar = document.createElement('div');
+    toolbar.className='gradToolbar';
+    const hint = document.createElement('div');
+    hint.style.fontSize='11px'; hint.style.color='var(--text-dim)';
+    hint.textContent = 'Клик над полосой — новый стоп. Delete — удалить выбранный.';
+    const chainBtn = document.createElement('button');
+    chainBtn.className='chainBtn active';
+    chainBtn.textContent = '🔗';
+    chainBtn.title = 'Примагничивать стопы прозрачности к стопам цвета';
+    chainBtn.addEventListener('click', ()=>{
+      chainLinked = !chainLinked;
+      chainBtn.classList.toggle('active', chainLinked);
+    });
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className='deleteStopBtn';
+    deleteBtn.textContent = '🗑 Удалить стоп';
+    deleteBtn.title = 'Удалить выбранный стоп';
+    deleteBtn.addEventListener('click', ()=> deleteSelected());
+    toolbar.appendChild(hint);
+    toolbar.appendChild(deleteBtn);
+    toolbar.appendChild(chainBtn);
+    wrap.appendChild(toolbar);
+    const bar = document.createElement('div');
+    bar.className='gradbar';
+    const fillDiv = document.createElement('div');
+    fillDiv.className='gradbar-fill';
+    bar.appendChild(fillDiv);
+    const topZone = document.createElement('div');
+    topZone.className='stopZone top';
+    const bottomZone = document.createElement('div');
+    bottomZone.className='stopZone bottom';
+    bar.appendChild(topZone);
+    bar.appendChild(bottomZone);
+    wrap.appendChild(bar);
+    const pickerHolder = document.createElement('div');
+    wrap.appendChild(pickerHolder);
+    editorBody.appendChild(wrap);
+    function currentRgba(){
+      if(selectedIsAlpha){
+        const a = parsed.alphaStops[selectedAlphaIdx];
+        return [1,1,1, a ? a.alpha : 1];
+      }
+      const c = parsed.colorStops[selectedColorIdx];
+      return [c.r/255, c.g/255, c.b/255, 1];
+    }
+    function nearestColorRgb(offset){
+      let best=null, bestDist=Infinity;
+      for(const c of parsed.colorStops){
+        const d = Math.abs(c.offset-offset);
+        if(d<bestDist){ bestDist=d; best=c; }
+      }
+      return best;
+    }
+    function redrawBar(){
+      const sortedColor = parsed.colorStops.slice().sort((a,b)=>a.offset-b.offset);
+      const stops = sortedColor.map(s=>'rgb('+Math.round(s.r)+','+Math.round(s.g)+','+Math.round(s.b)+') '+(s.offset*100)+'%');
+      fillDiv.style.background = 'linear-gradient(90deg,'+stops.join(',')+')';
+      topZone.querySelectorAll('.stop').forEach(n=>n.remove());
+      bottomZone.querySelectorAll('.astop').forEach(n=>n.remove());
+      parsed.colorStops.forEach((s,i)=>{
+        const el = document.createElement('div');
+        el.className='stop' + (!selectedIsAlpha && i===selectedColorIdx ? ' selected':'');
+        el.style.left = (s.offset*100)+'%';
+        const chip = document.createElement('div');
+        chip.className='chip';
+        chip.style.background = 'rgb('+Math.round(s.r)+','+Math.round(s.g)+','+Math.round(s.b)+')';
+        el.appendChild(chip);
+        const arrow = document.createElement('div');
+        arrow.className='arrow';
+        el.appendChild(arrow);
+        el.addEventListener('pointerdown', ev=>{
+          ev.preventDefault();
+          ev.stopPropagation();
+          selectedColorIdx = i; selectedIsAlpha=false;
+          redrawPicker();
+          redrawBar();
+          const freshEl = topZone.children[i];
+          startDragStop(freshEl, i, 'color', ev.pointerId, ev.clientX, ev.clientY);
+        });
+        topZone.appendChild(el);
+      });
+      parsed.alphaStops.forEach((s,i)=>{
+        const el = document.createElement('div');
+        el.className='astop' + (selectedIsAlpha && i===selectedAlphaIdx ? ' selected':'');
+        el.style.left = (s.offset*100)+'%';
+        el.title = 'Opacity: '+Math.round(s.alpha*100)+'%';
+        el.addEventListener('pointerdown', ev=>{
+          ev.preventDefault();
+          ev.stopPropagation();
+          selectedAlphaIdx = i; selectedIsAlpha=true;
+          redrawPicker();
+          redrawBar();
+          const freshEl = bottomZone.children[i];
+          startDragStop(freshEl, i, 'alpha', ev.pointerId, ev.clientX, ev.clientY);
+        });
+        bottomZone.appendChild(el);
+      });
+    }
+    function startDragStop(el, idx, kind, pointerId, downX, downY){
+      el.classList.add('dragging');
+      const rect = bar.getBoundingClientRect();
+      const CLICK_THRESHOLD = 4; 
+      let moved = false;
+      function applyPosition(e){
+        let x = (e.clientX-rect.left)/rect.width; x=Math.max(0,Math.min(1,x));
+        if(kind==='color'){
+          parsed.colorStops[idx].offset = Math.round(x*1000)/1000;
+        } else {
+          if(chainLinked){
+            for(const c of parsed.colorStops){
+              if(Math.abs(x - c.offset) < 0.02){ x = c.offset; el.classList.add('snapped'); break; }
+              el.classList.remove('snapped');
+            }
+          } else {
+            el.classList.remove('snapped');
+          }
+          parsed.alphaStops[idx].offset = Math.round(x*1000)/1000;
+        }
+        el.style.left=(x*100)+'%';
+      }
+      function move(e){
+        if(!moved){
+          if(Math.abs(e.clientX-downX) < CLICK_THRESHOLD && Math.abs(e.clientY-downY) < CLICK_THRESHOLD) return;
+          moved = true;
+        }
+        applyPosition(e);
+        commit(false);
+      }
+      function end(e){
+        if(moved) applyPosition(e);
+        el.classList.remove('dragging');
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', end);
+        el.removeEventListener('pointercancel', end);
+        try{ el.releasePointerCapture(pointerId); }catch(err){}
+        commit(true);
+      }
+      try{ el.setPointerCapture(pointerId); }catch(err){}
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', end);
+      el.addEventListener('pointercancel', end);
+    }
+    topZone.addEventListener('mousedown', e=>{
+      if(e.target !== topZone) return;
+      e.preventDefault();
+      const rect = bar.getBoundingClientRect();
+      let x = (e.clientX-rect.left)/rect.width; x=Math.max(0,Math.min(1,x));
+      const nearest = nearestColorRgb(x) || {r:255,g:255,b:255};
+      parsed.colorStops.push({offset:x, r:nearest.r, g:nearest.g, b:nearest.b});
+      selectedColorIdx = parsed.colorStops.length-1;
+      selectedIsAlpha=false;
+      commit(true);
+    });
+    bottomZone.addEventListener('mousedown', e=>{
+      if(e.target !== bottomZone) return;
+      e.preventDefault();
+      const rect = bar.getBoundingClientRect();
+      let x = (e.clientX-rect.left)/rect.width; x=Math.max(0,Math.min(1,x));
+      parsed.alphaStops.push({offset:x, alpha:1});
+      selectedAlphaIdx = parsed.alphaStops.length-1;
+      selectedIsAlpha=true;
+      commit(true);
+    });
+    function deleteSelected(){
+      if(selectedIsAlpha){
+        if(selectedAlphaIdx>=0){
+          parsed.alphaStops.splice(selectedAlphaIdx,1);
+          selectedIsAlpha=false; selectedColorIdx=Math.min(selectedColorIdx, parsed.colorStops.length-1);
+          commit(true);
+        }
+      } else if(parsed.colorStops.length>2){
+        parsed.colorStops.splice(selectedColorIdx,1);
+        selectedColorIdx = Math.max(0, selectedColorIdx-1);
+        commit(true);
+      }
+    }
+    function keyHandler(e){
+      if(!wrap.isConnected){ window.removeEventListener('keydown', keyHandler); return; }
+      const tag = document.activeElement && document.activeElement.tagName;
+      if(tag==='INPUT' || tag==='TEXTAREA') return;
+      if(e.key==='Delete' || e.key==='Backspace'){
+        e.preventDefault();
+        deleteSelected();
+      }
+    }
+    window.addEventListener('keydown', keyHandler);
+    let colorPickerEl = null;
+    function redrawPicker(){
+      if(colorPickerEl) colorPickerEl.remove();
+      colorPickerEl = buildColorPicker(currentRgba(), (rgba, final)=>{
+        if(selectedIsAlpha){
+          if(selectedAlphaIdx>=0) parsed.alphaStops[selectedAlphaIdx].alpha = rgba[3];
+        } else {
+          parsed.colorStops[selectedColorIdx].r = rgba[0]*255;
+          parsed.colorStops[selectedColorIdx].g = rgba[1]*255;
+          parsed.colorStops[selectedColorIdx].b = rgba[2]*255;
+        }
+        commit(final);
+      });
+      pickerHolder.appendChild(colorPickerEl);
+    }
+    function updateFillOnly(){
+      const sortedColor = parsed.colorStops.slice().sort((a,b)=>a.offset-b.offset);
+      const stops = sortedColor.map(s=>'rgb('+Math.round(s.r)+','+Math.round(s.g)+','+Math.round(s.b)+') '+(s.offset*100)+'%');
+      fillDiv.style.background = 'linear-gradient(90deg,'+stops.join(',')+')';
+    }
+    function commit(final){
+      beginEditSession();
+      writeGradientStops(ref.g, parsed);
+      if(final){
+        redrawBar();
+        applyChangeAndRefresh(); refreshSwatches();
+        endEditSession();
+      } else {
+        updateFillOnly();
+        scheduleRefresh();
+      }
+    }
+    redrawBar();
+    redrawPicker();
+  }
+})();
+</script>
+</body>
+</html>
