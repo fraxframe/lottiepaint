@@ -17,6 +17,11 @@
   #topbar{display:flex;align-items:center;gap:14px;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--line);flex-wrap:wrap;row-gap:6px;}
   #topbar h1{font-size:14px;margin:0 8px 0 0;font-weight:600;color:var(--accent2);}
   .btn{background:var(--bg3);border:1px solid var(--line);color:var(--text);padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px;}
+  #undoRedoBar{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);flex:none;}
+  .iconBtn{display:flex;align-items:center;justify-content:center;width:34px;height:30px;padding:0;}
+  .iconBtn svg{width:18px;height:18px;color:var(--text);}
+  .iconBtn:disabled{opacity:.35;cursor:default;}
+  .iconBtn:disabled:hover{background:var(--bg3);border-color:var(--line);}
   .btn:hover{background:#3d3f44;border-color:var(--accent);}
   #filters{display:flex;gap:10px;align-items:center;}
   #filters label,#linearWrap label{display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--text-dim);font-size:12px;user-select:none;}
@@ -141,7 +146,7 @@
     </div>
     <div id="linearWrap">
       <label><input type="checkbox" id="linearMode"> Линейный режим</label>
-      <label style="margin-left:10px"><input type="checkbox" id="highlightSelected"> Подсвечивать выделенный элемент</label>
+      <label style="margin-left:10px"><input type="checkbox" id="highlightSelected"> Подсвечивать выбранный элемент</label>
     </div>
     <div id="bgControls">
       <span>Фон:</span>
@@ -157,6 +162,14 @@
     <div id="editorPanel">
       <h2>Свойство</h2>
       <div id="editorBody"><div class="empty-hint">Выберите fill, stroke или gradient в дереве слева, чтобы отредактировать цвет.</div></div>
+      <div id="undoRedoBar">
+        <button class="btn iconBtn" id="undoBtn" title="Отменить (Ctrl+Z)">
+          <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" fill="currentColor"/></svg>
+        </button>
+        <button class="btn iconBtn" id="redoBtn" title="Повторить (Ctrl+Shift+Z)">
+          <svg viewBox="0 0 24 24"><path d="M11.5 8c2.65 0 5.05.99 6.9 2.6L22 7v9h-9l3.62-3.62c-1.39-1.16-3.16-1.88-5.12-1.88-3.54 0-6.55 2.31-7.6 5.5l-2.37-.78C2.92 11.03 6.85 8 11.5 8z" fill="currentColor"/></svg>
+        </button>
+      </div>
     </div>
     <div id="editorResizer" title="Растянуть панель"></div>
     <div id="centerPanel">
@@ -187,6 +200,12 @@
   let editSessionActive = false;
   let editSessionSnapshot = null;
   function snapshotState(){ return animData ? JSON.stringify(animData) : null; }
+  function updateUndoRedoButtons(){
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if(undoBtn) undoBtn.disabled = !undoStack.length;
+    if(redoBtn) redoBtn.disabled = !redoStack.length;
+  }
   function beginEditSession(){
     if(!animData || editSessionActive) return;
     editSessionSnapshot = snapshotState();
@@ -199,20 +218,44 @@
       undoStack.push(editSessionSnapshot);
       if(undoStack.length > HISTORY_LIMIT) undoStack.shift();
       redoStack.length = 0;
+      updateUndoRedoButtons();
     }
     editSessionActive = false;
     editSessionSnapshot = null;
   }
+  function selectRowForDesc(desc){
+    document.querySelectorAll('.row.selected').forEach(r=>r.classList.remove('selected'));
+    if(!desc) return;
+    const item = itemRowsList.find(it=> it.type===desc.type && it.layerIndex===desc.layerIndex && JSON.stringify(it.idxPath)===JSON.stringify(desc.idxPath));
+    if(item && item.row) item.row.classList.add('selected');
+  }
   function applyHistoryState(jsonStr){
+    const prevDesc = currentSelection && currentSelection.desc;
     animData = JSON.parse(jsonStr);
-    currentSelection = null;
     highlightLayerIndex = -1;
     highlightRef = null;
     highlightType = null;
+    highlightIdxPath = null;
     clearHighlightClone();
-    if(typeof renderEditor === 'function') renderEditor();
     buildTree();
+    currentSelection = null;
+    if(prevDesc){
+      const ref = resolveSelectionDesc(prevDesc);
+      if(ref){
+        currentSelection = (prevDesc.type==='fill'||prevDesc.type==='stroke')
+          ? {kind:'color', ref, desc:prevDesc}
+          : {kind:'gradient', ref, desc:prevDesc};
+        highlightLayerIndex = prevDesc.layerIndex;
+        highlightRef = ref;
+        highlightType = prevDesc.type;
+        highlightIdxPath = prevDesc.idxPath;
+        selectRowForDesc(prevDesc);
+      }
+    }
+    renderEditor();
+    updateHighlightBox();
     applyChangeAndRefresh();
+    updateUndoRedoButtons();
   }
   function performUndo(){
     if(editSessionActive) endEditSession();
@@ -229,6 +272,9 @@
     if(cur !== null) undoStack.push(cur);
     applyHistoryState(next);
   }
+  document.getElementById('undoBtn').addEventListener('click', performUndo);
+  document.getElementById('redoBtn').addEventListener('click', performRedo);
+  updateUndoRedoButtons();
   window.addEventListener('keydown', e=>{
     const tag = document.activeElement && document.activeElement.tagName;
     if(tag==='INPUT' || tag==='TEXTAREA') return;
@@ -277,7 +323,8 @@
   let highlightEnabled = false;
   let highlightLayerIndex = -1;
   let highlightRef = null;
-  let highlightType = null; 
+  let highlightType = null;
+  let highlightIdxPath = null;
   let highlightClone = null;
   document.getElementById('highlightSelected').addEventListener('change', e=>{
     highlightEnabled = e.target.checked;
@@ -288,24 +335,146 @@
     highlightClone = null;
   }
   const SHAPE_SEL = 'path,rect,circle,ellipse,polygon,polyline,line';
-  function findTargetPaths(g){
+  function getStaticScalar(prop){
+    if(!prop) return null;
+    if(typeof prop.k === 'number') return prop.k;
+    if(Array.isArray(prop.k)){
+      if(typeof prop.k[0] === 'number') return prop.k[0];
+      if(prop.k[0] && typeof prop.k[0].s !== 'undefined'){
+        const s = prop.k[0].s;
+        return Array.isArray(s) ? s[0] : s;
+      }
+    }
+    return null;
+  }
+  function getRefDashLen(ref){
+    if(!ref || !Array.isArray(ref.d) || !ref.d.length) return null;
+    const dEntry = ref.d.find(d=>d.n==='d') || ref.d[0];
+    return dEntry ? getStaticScalar(dEntry.v) : null;
+  }
+  function elementDasharrayNums(p){
+    const val = (p.style && p.style.strokeDasharray) || p.getAttribute('stroke-dasharray') || '';
+    if(!val || val === 'none') return [];
+    return val.split(/[ ,]+/).map(Number).filter(n=>!isNaN(n) && n>0);
+  }
+  function refineStrokeMatchesByDash(matches, ref){
+    if(matches.length <= 1) return matches;
+    const refHasDash = !!(ref.d && ref.d.length);
+    const refDashLen = getRefDashLen(ref);
+    const byDashPresence = matches.filter(p => (elementDasharrayNums(p).length > 0) === refHasDash);
+    let pool = byDashPresence.length ? byDashPresence : matches;
+    if(refHasDash && refDashLen !== null && pool.length > 1){
+      const byDashLen = pool.filter(p=>{
+        const nums = elementDasharrayNums(p);
+        return nums.length && Math.abs(nums[0]-refDashLen) <= Math.max(1, refDashLen*0.15);
+      });
+      if(byDashLen.length) pool = byDashLen;
+    }
+    return pool;
+  }
+  // Given a layer and an idxPath pointing at a style item (fl/st/gf/gs), returns the sibling
+  // shape-path ('sh') items living in the same shape group ('it' array). Used to disambiguate
+  // between sibling groups that happen to share identical fill/stroke color and dash, since color
+  // alone is not a unique identifier (e.g. two black outlines in different sub-groups).
+  function getSiblingShapeNodes(layer, idxPath){
+    if(!layer || !layer.shapes || !idxPath || idxPath.length < 1) return [];
+    let arr = layer.shapes;
+    for(let i=0;i<idxPath.length-1;i++){
+      const node = arr[idxPath[i]];
+      if(!node) return [];
+      arr = node.it;
+      if(!arr) return [];
+    }
+    return (arr||[]).filter(n=>n && n.ty==='sh');
+  }
+  function getStaticOrFirstShapeVertices(ks){
+    if(!ks || ks.k===undefined) return null;
+    const k = ks.k;
+    if(Array.isArray(k)){
+      const first = k[0];
+      if(first && Array.isArray(first.s) && first.s[0]) return first.s[0].v || null;
+      return null;
+    }
+    return (k && k.v) || null;
+  }
+  function bboxFromVertices(v){
+    if(!v || !v.length) return null;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(const pt of v){
+      if(!pt || pt.length<2) continue;
+      if(pt[0]<minX) minX=pt[0];
+      if(pt[0]>maxX) maxX=pt[0];
+      if(pt[1]<minY) minY=pt[1];
+      if(pt[1]>maxY) maxY=pt[1];
+    }
+    if(!isFinite(minX)) return null;
+    return {x:minX, y:minY, w:maxX-minX, h:maxY-minY};
+  }
+  function targetBBoxForIdxPath(idxPath, layerIndex){
+    if(!idxPath || typeof layerIndex !== 'number' || !animData || !animData.layers) return null;
+    const layer = animData.layers[layerIndex];
+    if(!layer) return null;
+    const shapeNodes = getSiblingShapeNodes(layer, idxPath);
+    if(!shapeNodes.length) return null;
+    // combine all sibling path shapes (usually just one) into a single bbox
+    let combined = null;
+    for(const sn of shapeNodes){
+      const verts = getStaticOrFirstShapeVertices(sn.ks);
+      const bb = bboxFromVertices(verts);
+      if(!bb) continue;
+      if(!combined) combined = bb;
+      else{
+        const x2 = Math.max(combined.x+combined.w, bb.x+bb.w);
+        const y2 = Math.max(combined.y+combined.h, bb.y+bb.h);
+        combined.x = Math.min(combined.x, bb.x);
+        combined.y = Math.min(combined.y, bb.y);
+        combined.w = x2 - combined.x;
+        combined.h = y2 - combined.y;
+      }
+    }
+    return combined;
+  }
+  function refineMatchesByGeometry(matches, idxPath, layerIndex){
+    if(matches.length <= 1) return matches;
+    const target = targetBBoxForIdxPath(idxPath, layerIndex);
+    if(!target) return matches;
+    let best = [], bestDist = Infinity;
+    const scored = matches.map(p=>{
+      let bb;
+      try{ bb = p.getBBox(); }catch(err){ bb = null; }
+      if(!bb) return {p, dist: Infinity};
+      const dx = (bb.x+bb.width/2) - (target.x+target.w/2);
+      const dy = (bb.y+bb.height/2) - (target.y+target.h/2);
+      const dSize = Math.abs(bb.width-target.w) + Math.abs(bb.height-target.h);
+      const dist = Math.sqrt(dx*dx+dy*dy) + dSize;
+      return {p, dist};
+    });
+    for(const s of scored){ if(s.dist < bestDist) bestDist = s.dist; }
+    if(!isFinite(bestDist)) return matches;
+    const TOL = 1.5;
+    best = scored.filter(s=> s.dist <= bestDist + TOL).map(s=>s.p);
+    return best.length ? best : matches;
+  }
+  function findPathsForItem(g, type, ref, idxPath, layerIndex){
     const paths = Array.from(g.querySelectorAll(SHAPE_SEL));
-    if(!paths.length || !highlightType || !highlightRef) return paths;
-    if(highlightType==='fill' || highlightType==='stroke'){
-      const rgba = getStaticOrFirstColor(highlightRef.c);
+    if(!paths.length || !type || !ref) return paths;
+    if(type==='fill' || type==='stroke'){
+      const rgba = getColorAtFrame(ref.c, anim ? anim.currentFrame : null);
       const target = [Math.round((rgba[0]||0)*255), Math.round((rgba[1]||0)*255), Math.round((rgba[2]||0)*255)];
-      const attr = highlightType==='fill' ? 'fill' : 'stroke';
-      const matches = paths.filter(p=>{
+      const attr = type==='fill' ? 'fill' : 'stroke';
+      let matches = paths.filter(p=>{
         const val = (p.style && p.style[attr]) || p.getAttribute(attr) || '';
         const m = val.match(/rgba?\(([^)]+)\)/i);
         if(!m) return false;
         const parts = m[1].split(',').map(s=>parseFloat(s));
         return Math.abs((parts[0]||0)-target[0])<=2 && Math.abs((parts[1]||0)-target[1])<=2 && Math.abs((parts[2]||0)-target[2])<=2;
       });
+      if(type==='stroke') matches = refineStrokeMatchesByDash(matches, ref);
+      matches = refineMatchesByGeometry(matches, idxPath, layerIndex);
       return matches;
     }
-    const attr = highlightType==='gfill' ? 'fill' : 'stroke';
-    const parsed = parseGradientStops(highlightRef.g);
+    const attr = type==='gfill' ? 'fill' : 'stroke';
+    const parsed = parseGradientStops(ref.g);
     const svgRoot = g.ownerSVGElement || g.closest('svg');
     const grads = svgRoot ? Array.from(svgRoot.querySelectorAll('linearGradient,radialGradient')) : [];
     let bestId = null, bestScore = Infinity;
@@ -325,22 +494,22 @@
       if(score < bestScore){ bestScore = score; bestId = gr.getAttribute('id'); }
     }
     if(!bestId) return [];
-    const matches = paths.filter(p=>{
+    let matches = paths.filter(p=>{
       const val = (p.style && p.style[attr]) || p.getAttribute(attr) || '';
       return val.indexOf('#'+bestId) !== -1;
     });
+    if(type==='gstroke') matches = refineStrokeMatchesByDash(matches, ref);
+    matches = refineMatchesByGeometry(matches, idxPath, layerIndex);
     return matches;
   }
-  function updateHighlightBox(){
-    clearHighlightClone();
-    if(!highlightEnabled || !anim || highlightLayerIndex < 0 || !anim.renderer || !anim.renderer.elements) return;
-    const rendererEl = anim.renderer.elements[highlightLayerIndex];
-    const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
-    if(!g) return;
+  function findTargetPaths(g){
+    return findPathsForItem(g, highlightType, highlightRef, highlightIdxPath, highlightLayerIndex);
+  }
+  function buildOutlineClone(g, matchedPaths, color){
     const svgRoot = g.ownerSVGElement || g.closest('svg');
-    if(!svgRoot) return;
+    if(!svgRoot) return null;
     const origPaths = Array.from(g.querySelectorAll(SHAPE_SEL));
-    const matched = new Set(findTargetPaths(g));
+    const matched = new Set(matchedPaths);
     const clone = g.cloneNode(true);
     clone.removeAttribute('id');
     clone.removeAttribute('mask');
@@ -350,21 +519,165 @@
     clone.querySelectorAll('mask,clipPath').forEach(n=>n.remove());
     clone.querySelectorAll('[mask]').forEach(n=>n.removeAttribute('mask'));
     clone.querySelectorAll('[clip-path]').forEach(n=>n.removeAttribute('clip-path'));
+    
+    clone.querySelectorAll('*').forEach(n=>{
+      n.removeAttribute('opacity');
+      n.removeAttribute('filter');
+      if(n.style){ n.style.opacity=''; n.style.filter='none'; n.style.mixBlendMode='normal'; }
+    });
+    clone.removeAttribute('opacity');
+    clone.style.opacity = '1';
+    clone.style.filter = 'none';
+    clone.style.mixBlendMode = 'normal';
     const clonePaths = Array.from(clone.querySelectorAll(SHAPE_SEL));
+    let any = false;
     clonePaths.forEach((cp, i)=>{
       if(matched.has(origPaths[i])){
         cp.style.fill = 'none';
-        cp.style.stroke = 'var(--accent2)';
-        cp.style.strokeWidth = '1.5';
-        cp.style.strokeOpacity = '0.95';
+        cp.style.stroke = color;
+        cp.style.strokeWidth = '2';
+        cp.style.strokeOpacity = '1';
         cp.setAttribute('vector-effect','non-scaling-stroke');
+        any = true;
       } else {
         cp.remove();
       }
     });
+    if(!any) return null;
     svgRoot.appendChild(clone);
-    highlightClone = clone;
+    return clone;
   }
+  function updateHighlightBox(){
+    clearHighlightClone();
+    if(!highlightEnabled || !anim || highlightLayerIndex < 0 || !anim.renderer || !anim.renderer.elements) return;
+    const rendererEl = anim.renderer.elements[highlightLayerIndex];
+    const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
+    if(!g) return;
+    highlightClone = buildOutlineClone(g, findTargetPaths(g), 'var(--accent2)');
+    if(hoverClone && hoverClone.parentNode) hoverClone.parentNode.appendChild(hoverClone);
+  }
+  let hoverClone = null;
+  let hoverItem = null;
+  let lastPointerX = null, lastPointerY = null;
+  function clearHoverClone(){
+    if(hoverClone && hoverClone.parentNode) hoverClone.parentNode.removeChild(hoverClone);
+    hoverClone = null;
+  }
+  function findLayerIndexForElement(el){
+    if(!anim || !anim.renderer || !anim.renderer.elements) return -1;
+    for(let i=0;i<anim.renderer.elements.length;i++){
+      const rendererEl = anim.renderer.elements[i];
+      const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
+      if(g && g.contains(el)) return i;
+    }
+    return -1;
+  }
+  function findItemForShapeInLayer(el, layerIndex, g){
+    if(!g) return null;
+    for(const cand of itemRowsList){
+      if(cand.layerIndex !== layerIndex) continue;
+      const matched = findPathsForItem(g, cand.type, cand.ref, cand.idxPath, cand.layerIndex);
+      if(matched.indexOf(el) !== -1) return {item: cand, g, el};
+    }
+    return null;
+  }
+  function showHoverHighlight(item){
+    clearHoverClone();
+    if(!item || !anim || !anim.renderer || !anim.renderer.elements) return;
+    const rendererEl = anim.renderer.elements[item.layerIndex];
+    const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
+    if(!g) return;
+    hoverClone = buildOutlineClone(g, findPathsForItem(g, item.type, item.ref, item.idxPath, item.layerIndex), '#ff2fd6');
+  }
+  function showHoverHighlightExact(hit){
+    clearHoverClone();
+    if(!hit || !hit.g || !hit.el) return;
+    hoverClone = buildOutlineClone(hit.g, [hit.el], '#ff2fd6');
+  }
+  function pointHitsElement(el, clientX, clientY){
+    if(typeof el.getScreenCTM !== 'function') return false;
+    const ctm = el.getScreenCTM();
+    if(!ctm) return false;
+    const svgRoot = el.ownerSVGElement || el.closest('svg');
+    if(!svgRoot) return false;
+    let local;
+    try{
+      const pt = svgRoot.createSVGPoint();
+      pt.x = clientX; pt.y = clientY;
+      local = pt.matrixTransform(ctm.inverse());
+    }catch(err){ return false; }
+    try{ if(el.isPointInFill && el.isPointInFill(local)) return true; }catch(err){}
+    try{
+      if(el.isPointInStroke){
+        const strokeVal = (el.style && el.style.stroke) || el.getAttribute('stroke') || '';
+        if(strokeVal && strokeVal !== 'none'){
+          // isPointInStroke respects stroke-dasharray, so on a dashed stroke the pointer
+          // must land exactly on a visible dash segment to register a hit. For hover
+          // hit-testing we want the whole path length to be hittable, dashes or not,
+          // so temporarily disable the dash pattern while testing.
+          const hadInlineDash = el.style && ('strokeDasharray' in el.style) && el.style.strokeDasharray;
+          const hadAttrDash = el.hasAttribute && el.hasAttribute('stroke-dasharray');
+          const prevInlineDash = hadInlineDash || '';
+          const prevAttrDash = hadAttrDash ? el.getAttribute('stroke-dasharray') : null;
+          if(prevInlineDash) el.style.strokeDasharray = 'none';
+          if(prevAttrDash !== null) el.setAttribute('stroke-dasharray', 'none');
+          let hit = false;
+          try{ hit = el.isPointInStroke(local); }catch(err){}
+          if(prevInlineDash) el.style.strokeDasharray = prevInlineDash;
+          if(prevAttrDash !== null) el.setAttribute('stroke-dasharray', prevAttrDash);
+          if(hit) return true;
+        }
+      }
+    }catch(err){}
+    return false;
+  }
+  function locateHoverHit(clientX, clientY){
+    if(!anim || !anim.renderer || !anim.renderer.elements || !activeContainer) return null;
+    const svgRoot = activeContainer.querySelector('svg');
+    if(!svgRoot) return null;
+    const allPaths = Array.from(svgRoot.querySelectorAll(SHAPE_SEL)).filter(el=>{
+      if(hoverClone && hoverClone.contains(el)) return false;
+      if(highlightClone && highlightClone.contains(el)) return false;
+      return true;
+    });
+    for(let i=allPaths.length-1;i>=0;i--){
+      const el = allPaths[i];
+      if(!pointHitsElement(el, clientX, clientY)) continue;
+      const layerIndex = findLayerIndexForElement(el);
+      if(layerIndex < 0) continue;
+      const rendererEl = anim.renderer.elements[layerIndex];
+      const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
+      const hit = findItemForShapeInLayer(el, layerIndex, g);
+      if(hit) return hit;
+    }
+    return null;
+  }
+  function expandHierarchyForItem(item){
+    if(!item) return;
+    if(typeof layerOpenFns[item.layerIndex] === 'function') layerOpenFns[item.layerIndex]();
+  }
+  viewport.addEventListener('pointermove', e=>{
+    if(!anim){ return; }
+    if(lastPointerX===e.clientX && lastPointerY===e.clientY) return;
+    lastPointerX = e.clientX; lastPointerY = e.clientY;
+    const hit = locateHoverHit(e.clientX, e.clientY);
+    const item = hit ? hit.item : null;
+    if(item !== hoverItem){
+      hoverItem = item;
+      if(hit){ showHoverHighlightExact(hit); viewport.style.cursor = 'pointer'; }
+      else { clearHoverClone(); viewport.style.cursor = ''; }
+    }
+  });
+  viewport.addEventListener('pointerleave', ()=>{
+    lastPointerX = null; lastPointerY = null; hoverItem = null; clearHoverClone(); viewport.style.cursor = '';
+  });
+  viewport.addEventListener('click', ()=>{
+    if(hoverItem && hoverItem.row){
+      expandHierarchyForItem(hoverItem);
+      hoverItem.row.scrollIntoView({block:'nearest'});
+      hoverItem.row.click();
+    }
+  });
   const bgChecker = document.getElementById('bgChecker');
   const bgColorPicker = document.getElementById('bgColorPicker');
   bgChecker.addEventListener('click', ()=>{
@@ -578,23 +891,40 @@
   const CAT_ORDER = ['gfill','gstroke','fill','stroke'];
   function collectCategories(items, prefix, layerIndex){
     const cats = {gfill:[], gstroke:[], fill:[], stroke:[]};
-    (function walk(items, path){
-      for(const it of (items||[])){
-        if(!it || typeof it !== 'object') continue;
+    (function walk(arr, path, idxPath){
+      (arr||[]).forEach((it, i)=>{
+        if(!it || typeof it !== 'object') return;
+        const myIdxPath = idxPath.concat(i);
         if(it.ty === 'gr'){
-          walk(it.it, path.concat(it.nm || 'Group'));
+          walk(it.it, path.concat(it.nm || 'Group'), myIdxPath);
         } else if(it.ty === 'fl'){
-          cats.fill.push({ref: it, label: it.nm || 'Fill', path: path, layerIndex: layerIndex});
+          cats.fill.push({ref: it, label: it.nm || 'Fill', path: path, layerIndex: layerIndex, idxPath: myIdxPath});
         } else if(it.ty === 'st'){
-          cats.stroke.push({ref: it, label: it.nm || 'Stroke', path: path, layerIndex: layerIndex});
+          cats.stroke.push({ref: it, label: it.nm || 'Stroke', path: path, layerIndex: layerIndex, idxPath: myIdxPath});
         } else if(it.ty === 'gf'){
-          cats.gfill.push({ref: it, label: it.nm || 'Gradient Fill', path: path, layerIndex: layerIndex});
+          cats.gfill.push({ref: it, label: it.nm || 'Gradient Fill', path: path, layerIndex: layerIndex, idxPath: myIdxPath});
         } else if(it.ty === 'gs'){
-          cats.gstroke.push({ref: it, label: it.nm || 'Gradient Stroke', path: path, layerIndex: layerIndex});
+          cats.gstroke.push({ref: it, label: it.nm || 'Gradient Stroke', path: path, layerIndex: layerIndex, idxPath: myIdxPath});
         }
-      }
-    })(items, prefix || []);
+      });
+    })(items, prefix || [], []);
     return cats;
+  }
+  function resolveByIdxPath(layer, idxPath){
+    if(!layer || !layer.shapes || !idxPath) return null;
+    let arr = layer.shapes, node = null;
+    for(let i=0;i<idxPath.length;i++){
+      node = arr[idxPath[i]];
+      if(!node) return null;
+      if(i < idxPath.length-1) arr = node.it;
+    }
+    return node;
+  }
+  function resolveSelectionDesc(desc){
+    if(!desc || !animData || !animData.layers) return null;
+    const layer = animData.layers[desc.layerIndex];
+    if(!layer) return null;
+    return resolveByIdxPath(layer, desc.idxPath);
   }
   function categoriesEmpty(cats){
     return cats.gfill.length===0 && cats.gstroke.length===0 && cats.fill.length===0 && cats.stroke.length===0;
@@ -602,15 +932,17 @@
   function mergeCategories(target, src, layerName){
     for(const k of CAT_ORDER){
       for(const it of src[k]){
-        target[k].push({ref: it.ref, label: (layerName ? layerName+' / ' : '') + it.label, path: it.path, layerIndex: it.layerIndex});
+        target[k].push({ref: it.ref, label: (layerName ? layerName+' / ' : '') + it.label, path: it.path, layerIndex: it.layerIndex, idxPath: it.idxPath});
       }
     }
   }
   const openLayerNames = new Set();
   let itemRowsList = []; 
+  let layerOpenFns = {};
   function buildTree(){
     treeEl.innerHTML = '';
     itemRowsList = [];
+    layerOpenFns = {};
     if(!animData || !animData.layers){ return; }
     if(linearMode){
       const all = {gfill:[], gstroke:[], fill:[], stroke:[]};
@@ -625,7 +957,7 @@
     animData.layers.forEach((layer, layerIndex)=>{
       if(layer.ty !== 4 || !layer.shapes) return;
       const cats = collectCategories(layer.shapes, [], layerIndex);
-      const hasAny = !categoriesEmpty(cats);
+      const hasAny = CAT_ORDER.some(k => filters[k] && cats[k].length > 0);
       const layerNode = document.createElement('div');
       layerNode.className = 'node';
       const row = makeRowShell('layer', layer.nm || 'Layer', hasAny);
@@ -645,6 +977,13 @@
         };
         row.caret.addEventListener('click', ev=>{ ev.stopPropagation(); toggle(); });
         row.row.addEventListener('click', toggle);
+        layerOpenFns[layerIndex] = ()=>{
+          if(body.style.display === 'none'){
+            body.style.display = 'block';
+            row.caret.classList.add('open');
+            openLayerNames.add(layerKey);
+          }
+        };
       }
       layerNode.appendChild(body);
       treeEl.appendChild(layerNode);
@@ -660,7 +999,8 @@
       header.textContent = CAT_LABELS[catKey] + ':';
       parentEl.appendChild(header);
       list.forEach((item, idx)=>{
-        const row = makeItemRow(catKey, item.label || ((idx+1)+''), item.ref, item.layerIndex);
+        const label = linearMode ? ((idx+1)+'') : (item.label || ((idx+1)+''));
+        const row = makeItemRow(catKey, label, item.ref, item.layerIndex, item.idxPath);
         row.style.paddingLeft = compact ? '10px' : '14px';
         parentEl.appendChild(row);
       });
@@ -688,7 +1028,7 @@
     row.appendChild(nm);
     return {row, caret};
   }
-  function makeItemRow(type, name, ref, layerIndex){
+  function makeItemRow(type, name, ref, layerIndex, idxPath){
     const row = document.createElement('div');
     row.className = 'row';
     const caret = document.createElement('div');
@@ -705,19 +1045,29 @@
     const sw = document.createElement('div');
     sw.className = 'swatch';
     row.appendChild(sw);
-    itemRowsList.push({sw, type, ref});
+    itemRowsList.push({sw, type, ref, layerIndex, idxPath, row});
     updateSwatch(sw, type, ref);
     row.addEventListener('click', ()=>{
       document.querySelectorAll('.row.selected').forEach(r=>r.classList.remove('selected'));
       row.classList.add('selected');
+      const desc = {type, layerIndex: (typeof layerIndex === 'number') ? layerIndex : -1, idxPath};
       currentSelection = (type==='fill'||type==='stroke')
-        ? {kind:'color', ref}
-        : {kind:'gradient', ref};
-      highlightLayerIndex = (typeof layerIndex === 'number') ? layerIndex : -1;
+        ? {kind:'color', ref, desc}
+        : {kind:'gradient', ref, desc};
+      highlightLayerIndex = desc.layerIndex;
       highlightRef = ref;
       highlightType = type;
+      highlightIdxPath = idxPath;
       updateHighlightBox();
       renderEditor();
+    });
+    row.addEventListener('mouseenter', ()=>{
+      const li = (typeof layerIndex === 'number') ? layerIndex : -1;
+      if(li < 0) return;
+      showHoverHighlight({type, ref, layerIndex: li});
+    });
+    row.addEventListener('mouseleave', ()=>{
+      clearHoverClone();
     });
     return row;
   }
@@ -735,6 +1085,30 @@
       return (c.k[0] && c.k[0].s) || [1,1,1,1];
     }
     return [1,1,1,1];
+  }
+  // Returns the interpolated color at the given frame for animated (keyframed) color props.
+  // Needed because matching DOM elements by color must compare against what is actually
+  // rendered on the current frame, not just the first keyframe's value.
+  function getColorAtFrame(c, frame){
+    if(!c) return [1,1,1,1];
+    if(!Array.isArray(c.k)) return [1,1,1,1];
+    if(typeof c.k[0] === 'number') return c.k;
+    const kfs = c.k;
+    if(typeof frame !== 'number' || !isFinite(frame)) return (kfs[0] && kfs[0].s) || [1,1,1,1];
+    for(let i=0;i<kfs.length;i++){
+      const kf = kfs[i];
+      const next = kfs[i+1];
+      if(!next) return kf.s || (kfs[i-1] && kfs[i-1].e) || [1,1,1,1];
+      if(frame < next.t){
+        const s = kf.s, e = kf.e || next.s;
+        if(!s) return e || [1,1,1,1];
+        if(!e) return s;
+        const span = next.t - kf.t;
+        const ratio = span>0 ? clampNum((frame - kf.t)/span,0,1,0) : 0;
+        return s.map((v,idx)=> v + (((e[idx]!==undefined?e[idx]:v) - v) * ratio));
+      }
+    }
+    return (kfs[kfs.length-1] && (kfs[kfs.length-1].e || kfs[kfs.length-1].s)) || [1,1,1,1];
   }
   function clampNum(v, min, max, fallback){
     v = Number(v);
