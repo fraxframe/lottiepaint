@@ -12,6 +12,12 @@
     --panel-scale:1;
   }
   *{box-sizing:border-box;}
+  *{scrollbar-width:thin;scrollbar-color:var(--line) transparent;}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
+  ::-webkit-scrollbar-thumb:hover{background:var(--text-dim);background-clip:padding-box;}
+  ::-webkit-scrollbar-corner{background:transparent;}
   body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Arial,sans-serif;font-size:13px;overflow:hidden;}
   #app{display:flex;flex-direction:column;height:100vh;}
   #topbar{display:flex;align-items:center;gap:14px;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--line);flex-wrap:wrap;row-gap:6px;}
@@ -33,17 +39,24 @@
   .bgOption.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
   #bgColorPicker{width:28px;height:28px;border:1px solid var(--line);border-radius:5px;background:none;padding:0;cursor:pointer;}
   #bgColorPicker.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
-  #editorResizer{width:5px;flex:none;cursor:col-resize;background:transparent;position:relative;}
+  #editorResizer{width:4px;flex:none;cursor:col-resize;background:var(--line);position:relative;transition:background .12s;}
+  #editorResizer::after{content:'';position:absolute;top:50%;left:50%;width:4px;height:34px;transform:translate(-50%,-50%);border-radius:3px;background:var(--bg);border:1px solid var(--text-dim);}
+  #editorResizer::before{content:'';position:absolute;top:50%;left:50%;width:2px;height:18px;transform:translate(-50%,-50%);border-radius:1px;background:var(--text-dim);}
   #editorResizer:hover,#editorResizer.dragging{background:var(--accent);}
+  #editorResizer:hover::after,#editorResizer.dragging::after{border-color:var(--accent2);}
+  #editorResizer:hover::before,#editorResizer.dragging::before{background:var(--accent2);}
   #main{flex:1;display:flex;min-height:0;}
+  #panelsRow{display:flex;min-height:0;}
+  #mobileResizer{display:none;}
+  #player #undoRedoBar{margin:0;padding:0;border-top:none;}
   #treePanel{width:280px;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;}
   #treeHeader{padding:6px 10px;border-bottom:1px solid var(--line);color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;}
   #tree{flex:1;overflow:auto;padding:4px 0;}
   #editorPanel{width:290px;flex:none;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px;overflow:auto;}
   #editorPanel h2{font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px;}
   .empty-hint{color:var(--text-dim);font-size:12px;line-height:1.6;margin-top:20px;}
-  #centerPanel{flex:1;display:flex;flex-direction:column;min-width:0;background:#161719;}
-  #viewport{flex:1;display:flex;align-items:center;justify-content:center;position:relative;}
+  #centerPanel{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;background:#161719;}
+  #viewport{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:0;min-width:0;}
   #viewport.checker{
       background-image:
       linear-gradient(45deg,#cfcfcf 25%,transparent 25%),
@@ -54,7 +67,7 @@
       background-position:0 0,0 12px,12px -12px,-12px 0px;
       background-color:#ffffff;
   }
-  #lottieContainer,#lottieContainerB{width:480px;height:480px;}
+  #lottieContainer,#lottieContainerB{width:480px;height:480px;max-width:100%;max-height:100%;}
   #dropHint{position:absolute;color:var(--text-dim);text-align:center;pointer-events:none;font-size:13px;line-height:1.6;}
   #player{background:var(--bg2);border-top:1px solid var(--line);padding:8px 14px;display:flex;align-items:center;gap:10px;}
   #playBtn{width:32px;height:32px;border-radius:50%;background:var(--bg3);border:1px solid var(--line);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;}
@@ -127,6 +140,31 @@
   .preview-inner{width:100%;height:100%;border-radius:4px;}
   .rowflex{display:flex;gap:10px;align-items:center;}
   #fileInput{display:none;}
+
+  
+  @media (max-width:820px){
+    #topbar{padding:6px 8px;gap:8px;}
+    #topbar h1{display:none;}
+    #main{flex-direction:column;}
+    #centerPanel{order:1;flex:1 1 auto;min-height:0;}
+    #editorResizer{display:none;}
+    #panelsRow{order:2;flex:0 0 42vh;min-height:160px;border-top:1px solid var(--line);}
+    #treePanel{width:auto;flex:0 0 var(--mtree-w,50%);}
+    #editorPanel{width:auto;flex:1 1 auto;min-width:0;}
+    #mobileResizer{display:block;width:4px;flex:none;cursor:col-resize;background:var(--line);position:relative;touch-action:none;transition:background .12s;}
+    #mobileResizer::after{content:'';position:absolute;top:50%;left:50%;width:4px;height:34px;transform:translate(-50%,-50%);border-radius:3px;background:var(--bg);border:1px solid var(--text-dim);}
+    #mobileResizer::before{content:'';position:absolute;top:50%;left:50%;width:2px;height:18px;transform:translate(-50%,-50%);border-radius:1px;background:var(--text-dim);}
+    #mobileResizer:hover,#mobileResizer.dragging{background:var(--accent);}
+    #mobileResizer:hover::after,#mobileResizer.dragging::after{border-color:var(--accent2);}
+    #mobileResizer:hover::before,#mobileResizer.dragging::before{background:var(--accent2);}
+    #player{gap:8px;padding:8px 10px;flex-wrap:nowrap;}
+    #frameLabel{width:auto;min-width:0;font-size:10px;}
+    #player #undoRedoBar{display:flex;gap:6px;flex:none;order:3;}
+    #player #undoRedoBar .iconBtn{width:28px;height:28px;}
+    #player #scrub{order:2;}
+    #player #playBtn{order:1;}
+    #player #frameLabel{order:4;}
+  }
 </style>
 </head>
 <body>
@@ -155,20 +193,21 @@
     </div>
   </div>
   <div id="main">
-    <div id="treePanel">
-      <div id="treeHeader">Структура стикера</div>
-      <div id="tree"></div>
-    </div>
-    <div id="editorPanel">
-      <h2>Свойство</h2>
-      <div id="editorBody"><div class="empty-hint">Выберите fill, stroke или gradient в дереве слева, чтобы отредактировать цвет.</div></div>
-      <div id="undoRedoBar">
-        <button class="btn iconBtn" id="undoBtn" title="Отменить (Ctrl+Z)">
-          <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" fill="currentColor"/></svg>
-        </button>
-        <button class="btn iconBtn" id="redoBtn" title="Повторить (Ctrl+Shift+Z)">
-          <svg viewBox="0 0 24 24"><path d="M11.5 8c2.65 0 5.05.99 6.9 2.6L22 7v9h-9l3.62-3.62c-1.39-1.16-3.16-1.88-5.12-1.88-3.54 0-6.55 2.31-7.6 5.5l-2.37-.78C2.92 11.03 6.85 8 11.5 8z" fill="currentColor"/></svg>
-        </button>
+    <div id="panelsRow">
+      <div id="treePanel">
+        <div id="tree"></div>
+      </div>
+      <div id="mobileResizer"></div>
+      <div id="editorPanel">
+        <div id="editorBody"><div class="empty-hint">Выберите fill, stroke или gradient в дереве слева, чтобы отредактировать цвет.</div></div>
+        <div id="undoRedoBar">
+          <button class="btn iconBtn" id="undoBtn" title="Отменить (Ctrl+Z)">
+            <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" fill="currentColor"/></svg>
+          </button>
+          <button class="btn iconBtn" id="redoBtn" title="Повторить (Ctrl+Shift+Z)">
+            <svg viewBox="0 0 24 24"><path d="M11.5 8c2.65 0 5.05.99 6.9 2.6L22 7v9h-9l3.62-3.62c-1.39-1.16-3.16-1.88-5.12-1.88-3.54 0-6.55 2.31-7.6 5.5l-2.37-.78C2.92 11.03 6.85 8 11.5 8z" fill="currentColor"/></svg>
+          </button>
+        </div>
       </div>
     </div>
     <div id="editorResizer" title="Растянуть панель"></div>
@@ -207,6 +246,7 @@
     if(redoBtn) redoBtn.disabled = !redoStack.length;
   }
   function beginEditSession(){
+    if(typeof clearHoverClone === 'function') clearHoverClone();
     if(!animData || editSessionActive) return;
     editSessionSnapshot = snapshotState();
     editSessionActive = true;
@@ -319,6 +359,64 @@
       resizer.classList.remove('dragging');
       document.body.style.userSelect = '';
     });
+  })();
+  (function(){
+    const panelsRow = document.getElementById('panelsRow');
+    const mobileResizer = document.getElementById('mobileResizer');
+    let dragging = false, startX = 0, startPct = 50;
+    function getPct(){
+      const v = getComputedStyle(panelsRow).getPropertyValue('--mtree-w').trim();
+      const n = parseFloat(v);
+      return isNaN(n) ? 50 : n;
+    }
+    function setPct(p){
+      p = Math.max(20, Math.min(80, p));
+      panelsRow.style.setProperty('--mtree-w', p + '%');
+    }
+    function onDown(e){
+      dragging = true; startX = e.clientX; startPct = getPct();
+      mobileResizer.classList.add('dragging');
+      try{ mobileResizer.setPointerCapture(e.pointerId); }catch(err){}
+      e.preventDefault();
+    }
+    function onMove(e){
+      if(!dragging) return;
+      const rect = panelsRow.getBoundingClientRect();
+      if(!rect.width) return;
+      const deltaPct = ((e.clientX - startX) / rect.width) * 100;
+      setPct(startPct + deltaPct);
+    }
+    function onUp(e){
+      if(!dragging) return;
+      dragging = false;
+      mobileResizer.classList.remove('dragging');
+      try{ mobileResizer.releasePointerCapture(e.pointerId); }catch(err){}
+    }
+    mobileResizer.addEventListener('pointerdown', onDown);
+    mobileResizer.addEventListener('pointermove', onMove);
+    mobileResizer.addEventListener('pointerup', onUp);
+    mobileResizer.addEventListener('pointercancel', onUp);
+  })();
+  (function(){
+    const mq = window.matchMedia('(max-width:820px)');
+    const undoRedoBar = document.getElementById('undoRedoBar');
+    const editorPanel = document.getElementById('editorPanel');
+    const player = document.getElementById('player');
+    const scrubEl = document.getElementById('scrub');
+    function placeUndoRedo(isMobile){
+      if(isMobile){
+        if(undoRedoBar.parentElement !== player){
+          player.insertBefore(undoRedoBar, scrubEl.nextSibling);
+        }
+      } else {
+        if(undoRedoBar.parentElement !== editorPanel){
+          editorPanel.appendChild(undoRedoBar);
+        }
+      }
+    }
+    placeUndoRedo(mq.matches);
+    if(mq.addEventListener) mq.addEventListener('change', e=>placeUndoRedo(e.matches));
+    else mq.addListener(e=>placeUndoRedo(e.matches));
   })();
   let highlightEnabled = false;
   let highlightLayerIndex = -1;
@@ -670,6 +768,16 @@
   });
   viewport.addEventListener('pointerleave', ()=>{
     lastPointerX = null; lastPointerY = null; hoverItem = null; clearHoverClone(); viewport.style.cursor = '';
+  });
+  viewport.addEventListener('pointerdown', e=>{
+    if(e.pointerType !== 'touch') return;
+    if(!anim) return;
+    lastPointerX = e.clientX; lastPointerY = e.clientY;
+    const hit = locateHoverHit(e.clientX, e.clientY);
+    const item = hit ? hit.item : null;
+    hoverItem = item;
+    if(hit){ showHoverHighlightExact(hit); }
+    else { clearHoverClone(); }
   });
   viewport.addEventListener('click', ()=>{
     if(hoverItem && hoverItem.row){
