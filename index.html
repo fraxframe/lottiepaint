@@ -1226,6 +1226,56 @@ input[type=checkbox],
     if (!val || val === "none") return [];
     return val.split(/[ ,]+/).map(Number).filter((n) => !isNaN(n) && n > 0);
   }
+  let paintMapCache = new Map();
+  function invalidatePaintMapCache() {
+    paintMapCache = new Map();
+  }
+  function walkRawShapesForPaint(arr, idxPath, out) {
+    (arr || []).forEach((it, i) => {
+      if (!it || typeof it !== "object") return;
+      const myIdxPath = idxPath.concat(i);
+      if (it.ty === "gr" && it.it) {
+        walkRawShapesForPaint(it.it, myIdxPath, out);
+      } else if (it.ty === "fl" || it.ty === "st" || it.ty === "gf" || it.ty === "gs") {
+        out.push({ ref: it, idxPath: myIdxPath });
+      }
+    });
+  }
+  function buildPaintMapForLayer(layerIndex) {
+    if (!anim || !anim.renderer || !anim.renderer.elements) return null;
+    const rendererEl = anim.renderer.elements[layerIndex];
+    if (!rendererEl || !rendererEl.shapesData || !rendererEl.stylesList) return null;
+    const items = [];
+    walkRawShapesForPaint(rendererEl.shapesData, [], items);
+    const refToIdx = new Map();
+    items.forEach((it) => refToIdx.set(it.ref, it.idxPath));
+    const idxToEl = new Map();
+    const elToIdx = new Map();
+    rendererEl.stylesList.forEach((s) => {
+      const idxPath = refToIdx.get(s.data);
+      if (!idxPath || !s.pElem) return;
+      idxToEl.set(idxPath.join(","), s.pElem);
+      elToIdx.set(s.pElem, idxPath);
+    });
+    return { idxToEl, elToIdx };
+  }
+  function getPaintMapForLayer(layerIndex) {
+    if (paintMapCache.has(layerIndex)) return paintMapCache.get(layerIndex);
+    const map = buildPaintMapForLayer(layerIndex);
+    paintMapCache.set(layerIndex, map);
+    return map;
+  }
+  function getPaintElement(layerIndex, idxPath) {
+    if (!idxPath) return null;
+    const map = getPaintMapForLayer(layerIndex);
+    if (!map) return null;
+    return map.idxToEl.get(idxPath.join(",")) || null;
+  }
+  function getIdxPathForElement(layerIndex, el) {
+    const map = getPaintMapForLayer(layerIndex);
+    if (!map) return null;
+    return map.elToIdx.get(el) || null;
+  }
   function refineStrokeMatchesByDash(matches, ref) {
     if (matches.length <= 1) return matches;
     const refHasDash = !!(ref.d && ref.d.length);
@@ -1262,6 +1312,32 @@ input[type=checkbox],
     }
     return k && k.v || null;
   }
+  function getShapeVerticesAtFrame(ks, frame) {
+    if (!ks || ks.k === void 0) return null;
+    const k = ks.k;
+    if (!Array.isArray(k)) return k && k.v || null;
+    if (typeof frame !== "number" || !isFinite(frame)) return getStaticOrFirstShapeVertices(ks);
+    for (let i = 0; i < k.length; i++) {
+      const kf = k[i];
+      const next = k[i + 1];
+      const kfV = kf.s && Array.isArray(kf.s) && kf.s[0] ? kf.s[0].v : null;
+      if (!next) return kfV;
+      if (frame < next.t) {
+        const eV = kf.e && Array.isArray(kf.e) && kf.e[0] && kf.e[0].v || next.s && Array.isArray(next.s) && next.s[0] && next.s[0].v || null;
+        if (!kfV) return eV;
+        if (!eV || eV.length !== kfV.length) return kfV;
+        const span = next.t - kf.t;
+        const ratio = span > 0 ? Math.max(0, Math.min(1, (frame - kf.t) / span)) : 0;
+        return kfV.map((pt, idx) => {
+          const ept = eV[idx];
+          if (!pt || !ept) return pt;
+          return [pt[0] + (ept[0] - pt[0]) * ratio, pt[1] + (ept[1] - pt[1]) * ratio];
+        });
+      }
+    }
+    const last = k[k.length - 1];
+    return last && (last.e && last.e[0] && last.e[0].v || last.s && last.s[0] && last.s[0].v) || null;
+  }
   function bboxFromVertices(v) {
     if (!v || !v.length) return null;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -1283,7 +1359,7 @@ input[type=checkbox],
     if (!shapeNodes.length) return null;
     let combined = null;
     for (const sn of shapeNodes) {
-      const verts = getStaticOrFirstShapeVertices(sn.ks);
+      const verts = getShapeVerticesAtFrame(sn.ks, anim ? anim.currentFrame : null);
       const bb = bboxFromVertices(verts);
       if (!bb) continue;
       if (!combined) combined = bb;
@@ -1432,7 +1508,8 @@ input[type=checkbox],
     const rendererEl = anim.renderer.elements[highlightLayerIndex];
     const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
     if (!g) return;
-    highlightClone = buildOutlineClone(g, findTargetPaths(g), "var(--accent2)");
+    const exact = highlightIdxPath ? getPaintElement(highlightLayerIndex, highlightIdxPath) : null;
+    highlightClone = buildOutlineClone(g, exact ? [exact] : findTargetPaths(g), "var(--accent2)");
     if (hoverClone && hoverClone.parentNode) hoverClone.parentNode.appendChild(hoverClone);
   }
   let hoverClone = null;
@@ -1453,6 +1530,15 @@ input[type=checkbox],
   }
   function findItemForShapeInLayer(el, layerIndex, g) {
     if (!g) return null;
+    const exactIdxPath = getIdxPathForElement(layerIndex, el);
+    if (exactIdxPath) {
+      const key = JSON.stringify(exactIdxPath);
+      const exactItem = itemRowsList.find((it) => it.layerIndex === layerIndex && JSON.stringify(it.idxPath) === key);
+      if (exactItem) return { item: exactItem, g, el };
+      return null;
+    }
+    // Fallback heuristic (used only if the renderer didn't expose an exact
+    // idxPath<->element map for this layer, e.g. unusual shape structures).
     let elBBox = null;
     try {
       elBBox = el.getBBox();
@@ -1465,9 +1551,6 @@ input[type=checkbox],
       if (cand.layerIndex !== layerIndex) continue;
       const matched = findPathsForItem(g, cand.type, cand.ref, cand.idxPath, cand.layerIndex);
       if (matched.indexOf(el) === -1) continue;
-      // Multiple items can loosely match the same element (same color/dash).
-      // Disambiguate by picking whichever candidate's own declared geometry
-      // sits closest to the element that was actually clicked/hovered.
       const target = targetBBoxForIdxPath(cand.idxPath, cand.layerIndex);
       let dist = 0;
       if (elBBox && target) {
@@ -1489,12 +1572,36 @@ input[type=checkbox],
     const rendererEl = anim.renderer.elements[item.layerIndex];
     const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
     if (!g) return;
-    hoverClone = buildOutlineClone(g, findPathsForItem(g, item.type, item.ref, item.idxPath, item.layerIndex), "#ff2fd6");
+    const exact = item.idxPath ? getPaintElement(item.layerIndex, item.idxPath) : null;
+    const paths = exact ? [exact] : findPathsForItem(g, item.type, item.ref, item.idxPath, item.layerIndex);
+    hoverClone = buildOutlineClone(g, paths, "#ff2fd6");
   }
   function showHoverHighlightExact(hit) {
     clearHoverClone();
     if (!hit || !hit.g || !hit.el) return;
     hoverClone = buildOutlineClone(hit.g, [hit.el], "#ff2fd6");
+  }
+  function showHoverHighlightLayer(layerIndex) {
+    clearHoverClone();
+    if (!anim || !anim.renderer || !anim.renderer.elements || typeof layerIndex !== "number" || layerIndex < 0) return;
+    const rendererEl = anim.renderer.elements[layerIndex];
+    const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
+    if (!g) return;
+    const allShapePaths = Array.from(g.querySelectorAll(SHAPE_SEL));
+    hoverClone = buildOutlineClone(g, allShapePaths, "#ff2fd6");
+  }
+  function paintIsGradient(val) {
+    return /url\(/.test(val);
+  }
+  function fillHitAllowed(el) {
+    const fillVal = el.style && el.style.fill || el.getAttribute("fill") || "";
+    if (!fillVal || fillVal === "none") return false;
+    return paintIsGradient(fillVal) ? filters.gfill : filters.fill;
+  }
+  function strokeHitAllowed(el) {
+    const strokeVal = el.style && el.style.stroke || el.getAttribute("stroke") || "";
+    if (!strokeVal || strokeVal === "none") return false;
+    return paintIsGradient(strokeVal) ? filters.gstroke : filters.stroke;
   }
   function pointHitsElement(el, clientX, clientY) {
     if (typeof el.getScreenCTM !== "function") return false;
@@ -1512,13 +1619,13 @@ input[type=checkbox],
       return false;
     }
     try {
-      if (el.isPointInFill && el.isPointInFill(local)) return true;
+      if (fillHitAllowed(el) && el.isPointInFill && el.isPointInFill(local)) return true;
     } catch (err) {
     }
     try {
       if (el.isPointInStroke) {
         const strokeVal = el.style && el.style.stroke || el.getAttribute("stroke") || "";
-        if (strokeVal && strokeVal !== "none") {
+        if (strokeVal && strokeVal !== "none" && strokeHitAllowed(el)) {
           const hadInlineDash = el.style && "strokeDasharray" in el.style && el.style.strokeDasharray;
           const hadAttrDash = el.hasAttribute && el.hasAttribute("stroke-dasharray");
           const prevInlineDash = hadInlineDash || "";
@@ -1539,6 +1646,40 @@ input[type=checkbox],
     }
     return false;
   }
+  function pointHitsStroke(el, clientX, clientY) {
+    if (typeof el.getScreenCTM !== "function") return false;
+    const strokeVal = el.style && el.style.stroke || el.getAttribute("stroke") || "";
+    if (!strokeVal || strokeVal === "none") return false;
+    if (!strokeHitAllowed(el)) return false;
+    const ctm = el.getScreenCTM();
+    if (!ctm) return false;
+    const svgRoot = el.ownerSVGElement || el.closest("svg");
+    if (!svgRoot) return false;
+    let local;
+    try {
+      const pt = svgRoot.createSVGPoint();
+      pt.x = clientX;
+      pt.y = clientY;
+      local = pt.matrixTransform(ctm.inverse());
+    } catch (err) {
+      return false;
+    }
+    if (!el.isPointInStroke) return false;
+    const hadInlineDash = el.style && "strokeDasharray" in el.style && el.style.strokeDasharray;
+    const hadAttrDash = el.hasAttribute && el.hasAttribute("stroke-dasharray");
+    const prevInlineDash = hadInlineDash || "";
+    const prevAttrDash = hadAttrDash ? el.getAttribute("stroke-dasharray") : null;
+    if (prevInlineDash) el.style.strokeDasharray = "none";
+    if (prevAttrDash !== null) el.setAttribute("stroke-dasharray", "none");
+    let hit = false;
+    try {
+      hit = el.isPointInStroke(local);
+    } catch (err) {
+    }
+    if (prevInlineDash) el.style.strokeDasharray = prevInlineDash;
+    if (prevAttrDash !== null) el.setAttribute("stroke-dasharray", prevAttrDash);
+    return hit;
+  }
   function locateHoverHit(clientX, clientY) {
     if (!anim || !anim.renderer || !anim.renderer.elements || !activeContainer) return null;
     const svgRoot = activeContainer.querySelector("svg");
@@ -1548,6 +1689,20 @@ input[type=checkbox],
       if (highlightClone && highlightClone.contains(el)) return false;
       return true;
     });
+    // Pass 1: strokes take priority over whatever is drawn on top of them
+    // (e.g. a gradient-filled shape sitting above a thin stroked path),
+    // since a stroke hit is a narrow, deliberate target.
+    for (let i = allPaths.length - 1; i >= 0; i--) {
+      const el = allPaths[i];
+      if (!pointHitsStroke(el, clientX, clientY)) continue;
+      const layerIndex = findLayerIndexForElement(el);
+      if (layerIndex < 0) continue;
+      const rendererEl = anim.renderer.elements[layerIndex];
+      const g = rendererEl && (rendererEl.layerElement || rendererEl.baseElement);
+      const hit = findItemForShapeInLayer(el, layerIndex, g);
+      if (hit) return hit;
+    }
+    // Pass 2: fall back to normal z-order fill/stroke hit-testing.
     for (let i = allPaths.length - 1; i >= 0; i--) {
       const el = allPaths[i];
       if (!pointHitsElement(el, clientX, clientY)) continue;
@@ -1752,6 +1907,7 @@ input[type=checkbox],
         activeContainer = nextContainer;
         activeIsFirst = !activeIsFirst;
         anim = nextAnim;
+        invalidatePaintMapCache();
         if (oldAnim) oldAnim.destroy();
         setupScrub();
         updatePlayBtn();
@@ -1936,6 +2092,12 @@ input[type=checkbox],
       layerNode.className = "node";
       const row = makeRowShell("layer", layer.nm || "Layer", hasAny);
       layerNode.appendChild(row.row);
+      row.row.addEventListener("mouseenter", () => {
+        showHoverHighlightLayer(layerIndex);
+      });
+      row.row.addEventListener("mouseleave", () => {
+        clearHoverClone();
+      });
       const body = document.createElement("div");
       const layerKey = layerIndex + ":" + (layer.nm || "");
       const wasOpen = openLayerNames.has(layerKey);
@@ -2039,7 +2201,7 @@ input[type=checkbox],
     row.addEventListener("mouseenter", () => {
       const li = typeof layerIndex === "number" ? layerIndex : -1;
       if (li < 0) return;
-      showHoverHighlight({ type, ref, layerIndex: li });
+      showHoverHighlight({ type, ref, layerIndex: li, idxPath });
     });
     row.addEventListener("mouseleave", () => {
       clearHoverClone();
