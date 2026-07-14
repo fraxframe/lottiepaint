@@ -2089,6 +2089,7 @@ input[type=checkbox],
     if (!animData || !animData.layers) {
       return;
     }
+    const counter = { gfill: 0, gstroke: 0, fill: 0, stroke: 0 };
     if (linearMode) {
       const all = { gfill: [], gstroke: [], fill: [], stroke: [] };
       animData.layers.forEach((layer, layerIndex) => {
@@ -2096,7 +2097,7 @@ input[type=checkbox],
         const cats = collectCategories(layer.shapes, [], layerIndex);
         mergeCategories(all, cats, layer.nm);
       });
-      renderCategoryPanel(treeEl, all, false);
+      renderCategoryPanel(treeEl, all, false, counter);
       return;
     }
     animData.layers.forEach((layer, layerIndex) => {
@@ -2120,7 +2121,7 @@ input[type=checkbox],
       body.style.paddingLeft = "10px";
       if (wasOpen) row.caret.classList.add("open");
       if (hasAny) {
-        renderCategoryPanel(body, cats, true);
+        renderCategoryPanel(body, cats, true, counter);
         const toggle = () => {
           toggleOpen(row.caret, body);
           if (body.style.display === "none") openLayerNames.delete(layerKey);
@@ -2143,7 +2144,7 @@ input[type=checkbox],
       treeEl.appendChild(layerNode);
     });
   }
-  function renderCategoryPanel(parentEl, cats, compact) {
+  function renderCategoryPanel(parentEl, cats, compact, counter) {
     for (const catKey of CAT_ORDER) {
       if (!filters[catKey]) continue;
       const list = cats[catKey];
@@ -2153,7 +2154,10 @@ input[type=checkbox],
       header.textContent = CAT_LABELS[catKey] + ":";
       parentEl.appendChild(header);
       list.forEach((item, idx) => {
-        const label = linearMode ? idx + 1 + "" : item.label || idx + 1 + "";
+        counter[catKey] += 1;
+        const rawLabel = item.label || "";
+        const baseName = rawLabel.replace(/\s*\d+\s*$/, "") || CAT_LABELS[catKey].replace(/s:?$/, "");
+        const label = baseName + " " + counter[catKey];
         const row = makeItemRow(catKey, label, item.ref, item.layerIndex, item.idxPath);
         row.style.paddingLeft = compact ? "10px" : "14px";
         parentEl.appendChild(row);
