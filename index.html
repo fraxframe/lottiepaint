@@ -91,6 +91,18 @@ body {
   font-weight: 600;
   color: var(--accent2);
 }
+#fraxportLink {
+  margin-left: auto;
+  color: #4ea7f2;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 15px;
+  transition: color 0.15s ease;
+}
+#fraxportLink:hover,
+#fraxportLink:focus {
+  color: #7ec4ff;
+}
 .btn {
   background: var(--bg3);
   border: 1px solid var(--line);
@@ -364,7 +376,7 @@ body {
   color: var(--text-dim);
   text-align: center;
   pointer-events: none;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.6;
 }
 #player {
@@ -946,6 +958,7 @@ input[type=checkbox],
       <label><input type="checkbox" id="linearMode"> Линейный режим</label>
       <label style="margin-left:10px"><input type="checkbox" id="highlightSelected"> Подсвечивать выбранный элемент</label>
     </div>
+    <a id="fraxportLink" href="https://t.me/fraxport" target="_blank" rel="noopener noreferrer">@fraxport</a>
     <div id="bgControls">
       <span>Фон:</span>
       <button class="btn bgOption active" id="bgChecker" title="Прозрачный (шахматка)">▦</button>
@@ -1821,6 +1834,7 @@ input[type=checkbox],
       alert("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u0435 \u0444\u0430\u0439\u043B");
       return;
     }
+    animData.nm = "telegram @fraxport";
     const blob = new Blob([JSON.stringify(animData)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -1832,6 +1846,7 @@ input[type=checkbox],
       alert("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u0435 \u0444\u0430\u0439\u043B");
       return;
     }
+    animData.nm = "telegram @fraxport";
     const gzipped = pako.gzip(JSON.stringify(animData));
     const blob = new Blob([gzipped], { type: "application/octet-stream" });
     if (window.showSaveFilePicker) {
